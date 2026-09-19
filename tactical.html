@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Tactical — STAB Demo</title>
+<link rel="stylesheet" href="style.css">
+<script src="utils.js"></script>
+</head>
+<body>
+<div class="app-frame">
+  <div class="nav-links">
+    <a href="index.html">&larr; Demo Home</a>
+    <a href="character-sheet.html">Character Sheet</a>
+    <a href="character-screen.html">Character Screen</a>
+    <a href="engineering.html">Engineering</a>
+    <a href="gd-console.html">GD Console</a>
+  </div>
+  <div class="top-bar">
+    <div>
+      <div class="eyebrow">Tactical Console</div>
+      <div class="title" style="font-size:20px;">USS Tempest &middot; Weapons &amp; Sensors</div>
+    </div>
+    <div class="row gap-8" id="alert-buttons"></div>
+  </div>
+  <div class="divider"></div>
+
+  <div class="grid" style="grid-template-columns: 260px 1fr 300px; gap:14px;">
+    <div class="col gap-14">
+      <div class="panel"><div class="panel-h">SENSOR CONTACTS</div><div id="contacts-list" class="col gap-8"></div></div>
+      <div class="panel"><div class="panel-h">TACTICAL PLOT</div>
+        <div class="tiny dimmer" style="margin-bottom:8px;">Select a contact, then click the plot to reposition it</div>
+        <div id="plot" style="position:relative; width:220px; height:220px; margin:0 auto; border-radius:50%; border:1px solid #2a3541; background:#0b1015;"></div>
+        <div id="elevation-wrap" style="margin-top:10px; display:none;">
+          <div class="row justify-between items-center"><label class="label" style="margin-bottom:0;">Elevation</label><div class="tiny" id="elev-readout" style="color:var(--accent);"></div></div>
+          <input type="range" min="-90" max="90" step="5" id="elev-slider" style="width:100%;">
+        </div>
+      </div>
+      <div class="panel"><div class="panel-h">TARGETING</div><div id="targeting-info"></div></div>
+      <div class="panel">
+        <div class="row justify-between items-center" style="margin-bottom:8px;"><div class="panel-h" style="margin-bottom:0;">SHIELDS</div><button class="btn btn-sm" id="shields-toggle"></button></div>
+        <div class="tiny" id="shields-status" style="margin-bottom:8px;"></div>
+        <div class="grid g2" id="shields-zones"></div>
+      </div>
+    </div>
+
+    <div class="col gap-14">
+      <div class="panel">
+        <div class="row justify-between items-center" style="cursor:pointer;" id="phasers-header"><div class="panel-h" style="margin-bottom:0;"><span id="phasers-arrow">&#9662;</span> PHASERS</div></div>
+        <div id="phasers-body"></div>
+      </div>
+      <div class="panel" style="flex-grow:1;">
+        <div class="row justify-between items-center" style="margin-bottom:10px;">
+          <div class="panel-h" style="margin-bottom:0; cursor:pointer;" id="torpedo-header"><span id="torpedo-arrow">&#9662;</span> TORPEDO LAUNCHERS</div>
+          <button class="btn btn-sm" id="torpedo-power-btn"></button>
+        </div>
+        <div id="torpedo-body"></div>
+      </div>
+    </div>
+
+    <div class="col gap-14">
+      <div class="panel"><div class="panel-h">MAGAZINE STATUS</div><div id="magazine-status" class="col gap-8"></div></div>
+      <div class="panel"><div class="panel-h">COMMUNICATIONS</div><div id="comms-panel" class="col gap-8"></div></div>
+      <div class="panel"><div class="panel-h">TRANSPORTER CONTROL</div><div id="transporter-panel" class="col gap-8"></div></div>
+    </div>
+  </div>
+
+  <div class="panel" style="height:150px; display:flex; flex-direction:column; margin-top:14px;">
+    <div class="panel-h">SYSTEM MESSAGES</div>
+    <div id="messages" style="flex-grow:1; overflow:auto; display:flex; flex-direction:column; gap:4px;"></div>
+  </div>
+</div>
+
+<script>
+const BASE_ACCENT = '#4a9eff';
+const STATE = loadState('tactical', {
+  alertLevel: 'normal',
+  contacts: [
+    { id:'c1', name:'Klingon Bird-of-Prey', origin:'Klingon', shields:80, hull:100, weapons:85, engines:85, sensors:75, lifeSupport:90, lifeSigns:12, bearing:30, range:0.5, elevation:20 },
+    { id:'c2', name:'Ferengi Marauder', origin:'Ferengi', shields:60, hull:100, weapons:55, engines:65, sensors:75, lifeSupport:85, lifeSigns:60, bearing:210, range:0.7, elevation:-15 }
+  ],
+  selectedTarget: null,
+  shieldsRaised: false,
+  phaserPower: 100, phaserCapacitor: 100, burstCount: 1,
+  torpedoPowerOnline: false, selectedLauncher: 'forward',
+  launchers: {
+    forward: { label: 'Forward Launcher', magazine: 'forward', spread: [], pattern: 'standard', allocations: {} },
+    aft: { label: 'Aft Launcher (Secondary Hull)', magazine: 'aft', spread: [], pattern: 'standard', allocations: {} },
+    saucer: { label: 'Aft Launcher (Saucer — separation only)', magazine: 'saucer', spread: [], pattern: 'standard', allocations: {} }
+  },
+  magazines: {
+    forward: [{type:'Photon Torpedo', count:8},{type:'Quantum Torpedo', count:4}],
+    aft: [{type:'Photon Torpedo', count:6},{type:'Tri-Cobalt Device', count:1}],
+    saucer: [{type:'Sensor Probe', count:10},{type:'Photon Torpedo', count:2}]
+  },
+  commType: 'Ship to Ship', commTarget: null, commMessage: '',
+  transporterType: 'Standard Transporter', transporterTarget: null, transporterDir: 'to', transporterNote: '',
+  messages: [{ text: 'Sensors online. Standing by.', color: '#6b7d89' }]
+});
+function persist() { saveState('tactical', STATE); }
+function applyTheme() { applyAlertTheme(STATE.alertLevel, BASE_ACCENT); }
+function statusColor(pct) { return pct>=70?'#7fb069':pct>=35?'#e8a33d':'#e05d5d'; }
+function log(text, color) { STATE.messages.unshift({ text, color }); STATE.messages = STATE.messages.slice(0,30); }
+
+const ATTACK_PATTERNS = [{key:'standard',label:'Standard',mult:1.0},{key:'alpha',label:'Attack Pattern Alpha',mult:1.0},{key:'beta',label:'Attack Pattern Beta',mult:1.1},{key:'delta',label:'Attack Pattern Delta',mult:1.2},{key:'omega',label:'Attack Pattern Omega',mult:1.35}];
+
+function contactStatus(c) {
+  if (c.hull<=0) return {label:'DESTROYED',color:'#e05d5d'};
+  if (c.hull<=0||(c.engines<=0&&c.weapons<=0)) return {label:'DISABLED',color:'#e05d5d'};
+  if (c.hull<30) return {label:'CRITICAL',color:'#e05d5d'};
+  if (c.hull<70||c.shields<20) return {label:'DAMAGED',color:'#e8a33d'};
+  return {label:'NOMINAL',color:'#7fb069'};
+}
+function applyDamage(c, amount) {
+  let overflow = 0;
+  if (c.shields>0) { if (amount>c.shields) { overflow=amount-c.shields; c.shields=0; } else c.shields-=amount; }
+  else overflow = amount;
+  if (overflow>0) {
+    c.hull = Math.max(0, c.hull-overflow);
+    c.engines = Math.max(0, c.engines-Math.round(overflow*0.4));
+    c.lifeSupport = Math.max(0, c.lifeSupport-Math.round(overflow*0.3));
+    c.lifeSigns = Math.max(0, c.lifeSigns-Math.round(overflow*0.15));
+  }
+}
+
+function renderAlertButtons() {
+  const wrap = document.getElementById('alert-buttons'); wrap.innerHTML = '';
+  ['normal','yellow','red'].forEach((lvl) => {
+    const labels = { normal:'Normal', yellow:'Yellow Alert', red:'Red Alert' };
+    wrap.appendChild(el('button', { class:'btn'+(STATE.alertLevel===lvl?' btn-accent':''), onclick: () => {
+      STATE.alertLevel = lvl;
+      if (lvl==='yellow' && !STATE.shieldsRaised) { STATE.shieldsRaised=true; log('Shields automatically raised.', '#7fb069'); }
+      if (lvl==='red') {
+        if (!STATE.shieldsRaised) { STATE.shieldsRaised=true; log('Shields automatically raised.', '#7fb069'); }
+        if (!STATE.torpedoPowerOnline) { STATE.torpedoPowerOnline=true; log('Weapons systems automatically powered up.', '#7fb069'); }
+      }
+      log(lvl==='red'?'Red Alert — all hands to battlestations.':lvl==='yellow'?'Yellow Alert declared.':'Stand down — Normal conditions restored.', lvl==='red'?'#e05d5d':lvl==='yellow'?'#e8a33d':'#7fb069');
+      persist(); applyTheme(); renderAll();
+    } }, labels[lvl]));
+  });
+}
+
+function renderContacts() {
+  const wrap = document.getElementById('contacts-list'); wrap.innerHTML = '';
+  STATE.contacts.forEach((c) => {
+    const stat = contactStatus(c);
+    wrap.appendChild(el('div', { class:'tile'+(STATE.selectedTarget===c.id?' selected':''), style:'padding:10px;', onclick: () => { STATE.selectedTarget=c.id; persist(); renderAll(); } }, [
+      el('div', { class:'row justify-between items-center' }, [el('div',{class:'small',style:'font-weight:600;'},c.name), el('div',{class:'tiny',style:'font-weight:700; color:'+stat.color+';'},stat.label)]),
+      el('div', { class:'tiny dim' }, c.origin),
+      el('div', { class:'tiny dimmer', style:'margin-top:4px;' }, ['Shields: ', el('span',{style:'color:'+statusColor(c.shields)+';'},c.shields+'%'), ' \u00b7 Hull: ', el('span',{style:'color:'+statusColor(c.hull)+';'},c.hull+'%')])
+    ]));
+  });
+}
+
+function renderPlot() {
+  const plot = document.getElementById('plot'); plot.innerHTML = '';
+  plot.appendChild(el('div', { style:'position:absolute; top:2px; left:50%; transform:translateX(-50%); font-size:9px; color:#566873;' }, 'FWD'));
+  plot.appendChild(el('div', { style:'position:absolute; bottom:2px; left:50%; transform:translateX(-50%); font-size:9px; color:#566873;' }, 'AFT'));
+  plot.appendChild(el('div', { style:'position:absolute; left:2px; top:50%; transform:translateY(-50%); font-size:9px; color:#566873;' }, 'PORT'));
+  plot.appendChild(el('div', { style:'position:absolute; right:2px; top:50%; transform:translateY(-50%); font-size:9px; color:#566873;' }, 'STBD'));
+  const shipMark = document.createElementNS('http://www.w3.org/2000/svg','svg');
+  shipMark.setAttribute('width','36'); shipMark.setAttribute('height','36'); shipMark.setAttribute('viewBox','0 0 36 36');
+  shipMark.style.position='absolute'; shipMark.style.top='50%'; shipMark.style.left='50%'; shipMark.style.transform='translate(-50%,-50%)'; shipMark.style.pointerEvents='none';
+  shipMark.innerHTML = '<ellipse cx="18" cy="13" rx="14" ry="7" fill="none" stroke="'+getComputedStyle(document.documentElement).getPropertyValue('--accent')+'" stroke-width="1.5"></ellipse><rect x="14" y="18" width="8" height="13" rx="3" fill="none" stroke="'+getComputedStyle(document.documentElement).getPropertyValue('--accent')+'" stroke-width="1.5"></rect>';
+  plot.appendChild(shipMark);
+  STATE.contacts.forEach((c) => {
+    const rad = (c.bearing*Math.PI)/180;
+    const left = 50 + c.range*40*Math.sin(rad), top = 50 - c.range*40*Math.cos(rad);
+    const stat = contactStatus(c);
+    const initials = c.name.split(' ').map(w=>w[0]).join('').slice(0,3).toUpperCase();
+    plot.appendChild(el('div', { style:'position:absolute; left:'+left+'%; top:'+top+'%; transform:translate(-50%,-50%); width:10px; height:10px; border-radius:50%; background:'+stat.color+'; border:2px solid '+(STATE.selectedTarget===c.id?'var(--accent)':'#0b1015')+'; pointer-events:none;' }));
+    const elev = c.elevation||0; const tag = elev>0?('\u25B2'+elev+'\u00b0'):elev<0?('\u25BC'+Math.abs(elev)+'\u00b0'):'';
+    plot.appendChild(el('div', { style:'position:absolute; left:'+left+'%; top:calc('+top+'% + 9px); transform:translate(-50%,0); font-size:9px; color:'+stat.color+'; white-space:nowrap; pointer-events:none;' }, initials+' '+tag));
+  });
+  plot.onclick = (e) => {
+    if (!STATE.selectedTarget) return;
+    const rect = plot.getBoundingClientRect();
+    const x = e.clientX-rect.left-rect.width/2, y = e.clientY-rect.top-rect.height/2;
+    let bearing = (Math.atan2(x,-y)*180)/Math.PI; if (bearing<0) bearing+=360;
+    const range = Math.min(1, Math.sqrt(x*x+y*y)/(rect.width/2));
+    const c = STATE.contacts.find(c=>c.id===STATE.selectedTarget);
+    c.bearing = Math.round(bearing); c.range = Math.round(range*100)/100;
+    persist(); renderPlot();
+  };
+
+  const target = STATE.contacts.find(c=>c.id===STATE.selectedTarget);
+  const elevWrap = document.getElementById('elevation-wrap');
+  if (target) {
+    elevWrap.style.display = 'block';
+    const slider = document.getElementById('elev-slider');
+    slider.value = target.elevation||0;
+    document.getElementById('elev-readout').textContent = (target.elevation||0)>0?((target.elevation)+'\u00b0 Above'):(target.elevation||0)<0?(Math.abs(target.elevation)+'\u00b0 Below'):'Level';
+    slider.oninput = (e) => { target.elevation = parseInt(e.target.value,10); persist(); renderPlot(); };
+  } else elevWrap.style.display = 'none';
+}
+
+function renderTargeting() {
+  const wrap = document.getElementById('targeting-info'); wrap.innerHTML = '';
+  const t = STATE.contacts.find(c=>c.id===STATE.selectedTarget);
+  if (!t) { wrap.appendChild(el('div', { class:'faint small' }, 'No target selected.')); return; }
+  const stat = contactStatus(t);
+  wrap.appendChild(el('div', { class:'small dim' }, ['Locked: ', el('strong',{},t.name), ' — ', el('span',{style:'color:'+stat.color+';'},stat.label)]));
+  wrap.appendChild(el('div', { class:'tiny dimmer', style:'margin-top:4px;' }, 'Shields '+t.shields+'% \u00b7 Hull '+t.hull+'% \u00b7 Life Signs '+t.lifeSigns));
+}
+
+function renderPhasers() {
+  const body = document.getElementById('phasers-body');
+  document.getElementById('phasers-header').onclick = () => { STATE.phasersCollapsed = !STATE.phasersCollapsed; persist(); renderPhasers(); };
+  document.getElementById('phasers-arrow').textContent = STATE.phasersCollapsed ? '\u25B8' : '\u25BE';
+  body.innerHTML = '';
+  if (STATE.phasersCollapsed) return;
+  body.appendChild(el('div', { class:'tiny dim', style:'margin:8px 0;' }, 'Status: 100% \u00b7 12x Type XII Arrays'));
+  body.appendChild(el('div', { class:'row justify-between items-center' }, [el('div',{class:'label',style:'margin-bottom:0;'},'Phaser Capacitor'), el('div',{class:'tiny',style:'color:'+statusColor(STATE.phaserCapacitor)+';'},STATE.phaserCapacitor+'%')]));
+  body.appendChild(el('div', { style:'height:6px; border-radius:3px; background:#1c252d; overflow:hidden; margin-bottom:10px;' }, [el('div',{style:'height:100%; width:'+STATE.phaserCapacitor+'%; background:'+statusColor(STATE.phaserCapacitor)+';'})]));
+  body.appendChild(el('div', { class:'row justify-between items-center' }, [el('div',{class:'label',style:'margin-bottom:0;'},'Power Pool (shots)'), el('div',{class:'tiny',style:'color:'+statusColor(STATE.phaserPower)+';'},STATE.phaserPower+'%')]));
+  body.appendChild(el('div', { style:'height:6px; border-radius:3px; background:#1c252d; overflow:hidden; margin-bottom:10px;' }, [el('div',{style:'height:100%; width:'+STATE.phaserPower+'%; background:'+statusColor(STATE.phaserPower)+';'})]));
+  const row = el('div', { class:'row items-end gap-8 wrap' });
+  const burstSel = el('select', { style:'width:70px;' }); [1,2,3,4,5].forEach(n=>burstSel.appendChild(el('option',{value:n},n))); burstSel.value = STATE.burstCount;
+  burstSel.onchange = (e) => { STATE.burstCount = parseInt(e.target.value,10); persist(); };
+  row.appendChild(el('div', { class:'col' }, [el('label',{class:'label'},'Burst (1-5)'), burstSel]));
+  const canFire = STATE.selectedTarget && STATE.phaserPower >= STATE.burstCount*20;
+  row.appendChild(el('button', { class:'btn'+(canFire?' btn-accent':''), onclick: () => {
+    if (!canFire) return;
+    const t = STATE.contacts.find(c=>c.id===STATE.selectedTarget);
+    for (let i=0;i<STATE.burstCount;i++) applyDamage(t,15);
+    STATE.phaserPower -= STATE.burstCount*20;
+    const stat = contactStatus(t);
+    let text = 'Phasers — '+STATE.burstCount+'-round burst on '+t.name+' — shields '+t.shields+'%, hull '+t.hull+'%';
+    if (stat.label!=='NOMINAL') text += ' — '+stat.label;
+    log(text, stat.label==='NOMINAL'?'#e8a33d':'#e05d5d');
+    persist(); renderAll();
+  } }, 'Execute Burst'));
+  row.appendChild(el('button', { class:'btn', onclick: () => {
+    const needed = 100-STATE.phaserPower; const drawn = Math.min(needed, STATE.phaserCapacitor);
+    if (drawn<=0) { log('Power Pool recharge failed — Capacitor depleted.', '#e05d5d'); persist(); renderAll(); return; }
+    STATE.phaserPower += drawn; STATE.phaserCapacitor -= drawn;
+    log(drawn<needed ? ('Power Pool partially recharged to '+STATE.phaserPower+'%.') : ('Power Pool recharged to '+STATE.phaserPower+'%.'), '#5ec8d8');
+    persist(); renderAll();
+  } }, 'Recharge Pool'));
+  row.appendChild(el('button', { class:'btn', onclick: () => { STATE.phaserCapacitor=100; log('Phaser Capacitor recharged to 100%.','#5ec8d8'); persist(); renderAll(); } }, 'Recharge Capacitor'));
+  body.appendChild(row);
+}
+
+function renderMagazineStatus() {
+  const wrap = document.getElementById('magazine-status'); wrap.innerHTML = '';
+  Object.entries(STATE.magazines).forEach(([key,items]) => {
+    wrap.appendChild(el('div', {}, [el('div',{class:'small dim',style:'font-weight:600;'},STATE.launchers[key].label+' Magazine'), ...items.map(it=>el('div',{class:'tiny dim'},it.type+': '+it.count))]));
+  });
+}
+
+function renderTorpedoes() {
+  document.getElementById('torpedo-header').onclick = () => { STATE.torpedoesCollapsed = !STATE.torpedoesCollapsed; persist(); renderTorpedoes(); };
+  document.getElementById('torpedo-arrow').textContent = STATE.torpedoesCollapsed ? '\u25B8' : '\u25BE';
+  const powerBtn = document.getElementById('torpedo-power-btn');
+  powerBtn.textContent = STATE.torpedoPowerOnline ? 'Torpedo Systems: Online' : 'Torpedo Systems: Offline';
+  powerBtn.className = 'btn btn-sm' + (STATE.torpedoPowerOnline ? ' btn-accent' : '');
+  powerBtn.onclick = () => { STATE.torpedoPowerOnline = !STATE.torpedoPowerOnline; log(STATE.torpedoPowerOnline?'Torpedo systems powered up.':'Torpedo systems powered down.', STATE.torpedoPowerOnline?'#7fb069':'#e8a33d'); persist(); renderAll(); };
+
+  const body = document.getElementById('torpedo-body'); body.innerHTML = '';
+  if (STATE.torpedoesCollapsed) return;
+  const sel = el('select', {});
+  Object.entries(STATE.launchers).forEach(([key,l]) => sel.appendChild(el('option',{value:key},l.label)));
+  sel.value = STATE.selectedLauncher;
+  sel.onchange = (e) => { STATE.selectedLauncher = e.target.value; persist(); renderTorpedoes(); };
+  body.appendChild(el('div', { class:'col', style:'margin-bottom:10px;' }, [el('label',{class:'label'},'Select Launcher'), sel]));
+
+  const key = STATE.selectedLauncher; const l = STATE.launchers[key];
+  const box = el('div', { style:'border:1px solid var(--panel-border); border-radius:8px; padding:12px; background:#0b1015;' });
+  box.appendChild(el('div', { class:'tiny dimmer' }, key==='saucer'?'Only usable when separated':'Available'));
+  const magItems = STATE.magazines[l.magazine].filter(m=>m.count>0);
+  const loadRow = el('div', { class:'row gap-8 items-end', style:'margin-top:8px;' });
+  const typeSel = el('select', { style:'flex-grow:1;' });
+  magItems.forEach(m => typeSel.appendChild(el('option',{value:m.type},m.type)));
+  const canLoad = STATE.torpedoPowerOnline && l.spread.length<4 && magItems.length>0;
+  loadRow.appendChild(el('div',{class:'col flex-grow'},[el('label',{class:'label'},'Load From Magazine (max 4)'), typeSel]));
+  loadRow.appendChild(el('button', { class:'btn'+(canLoad?'':''), style: canLoad?'':'opacity:0.4;', onclick: () => {
+    if (!canLoad) return;
+    const chosen = typeSel.value; const magItem = STATE.magazines[l.magazine].find(m=>m.type===chosen);
+    if (!magItem || magItem.count<=0) return;
+    magItem.count--; l.spread.push(chosen); persist(); renderTorpedoes(); renderMagazineStatus();
+  } }, 'Load Tube'));
+  box.appendChild(loadRow);
+
+  box.appendChild(el('div', { class:'label', style:'margin-top:10px;' }, 'Loaded Spread ('+l.spread.length+'/4)'));
+  if (l.spread.length) box.appendChild(el('div', { class:'row gap-6 wrap' }, l.spread.map(s=>el('span',{class:'tag'},s))));
+  else box.appendChild(el('div', { class:'faint tiny' }, 'Tube empty.'));
+
+  const patBtn = el('button', { class:'btn', style:'width:100%; margin-top:10px; text-align:left;', onclick: () => { STATE.attackPatternMenuOpen = !STATE.attackPatternMenuOpen; persist(); renderTorpedoes(); } }, 'Attack Pattern: '+ATTACK_PATTERNS.find(p=>p.key===l.pattern).label);
+  box.appendChild(patBtn);
+  if (STATE.attackPatternMenuOpen) {
+    const menu = el('div', { style:'margin-top:8px; border:1px solid #2a3541; border-radius:8px; padding:8px; background:#0f151a;' });
+    ATTACK_PATTERNS.forEach((p) => menu.appendChild(el('button', { class:'btn', style:'width:100%; text-align:left; border:none; margin-bottom:2px;', onclick: () => { l.pattern=p.key; STATE.attackPatternMenuOpen=false; persist(); renderTorpedoes(); } }, p.label)));
+    box.appendChild(menu);
+  }
+
+  box.appendChild(el('div', { class:'label', style:'margin-top:10px;' }, 'Target Allocation'));
+  let totalAlloc = 0;
+  STATE.contacts.forEach((c) => {
+    const val = l.allocations[c.id] || 0; totalAlloc += val;
+    const row = el('div', { class:'row justify-between items-center' });
+    row.appendChild(el('div', { class:'tiny dim' }, c.name));
+    const input = el('input', { type:'text', value: val, style:'width:60px; text-align:center; padding:6px;' });
+    input.onchange = (e) => { l.allocations[c.id] = Math.max(0, parseInt(e.target.value,10)||0); persist(); renderTorpedoes(); };
+    row.appendChild(input);
+    box.appendChild(row);
+  });
+  box.appendChild(el('div', { class:'tiny dimmer', style:'margin-top:6px;' }, 'Unallocated: ' + Math.max(0, l.spread.length-totalAlloc)));
+
+  const canExec = STATE.torpedoPowerOnline && l.spread.length>0 && totalAlloc>0 && totalAlloc<=l.spread.length;
+  box.appendChild(el('button', { class:'btn'+(canExec?' btn-accent':''), style:'width:100%; margin-top:10px;', onclick: () => {
+    if (!canExec) return;
+    const pattern = ATTACK_PATTERNS.find(p=>p.key===l.pattern);
+    Object.entries(l.allocations).forEach(([cid,n]) => {
+      if (!n) return;
+      const c = STATE.contacts.find(x=>x.id===cid); if (!c) return;
+      const dmg = Math.round(n*30*pattern.mult);
+      applyDamage(c, dmg);
+      const stat = contactStatus(c);
+      let text = l.label+' — '+pattern.label+' — '+n+'x torpedo on '+c.name+' — shields '+c.shields+'%, hull '+c.hull+'%';
+      if (stat.label!=='NOMINAL') text += ' — '+stat.label;
+      log(text, stat.label==='NOMINAL'?'#e8a33d':'#e05d5d');
+    });
+    l.spread = []; l.allocations = {};
+    persist(); renderAll();
+  } }, 'Execute Fire Mission'));
+
+  body.appendChild(box);
+}
+
+function renderComms() {
+  const wrap = document.getElementById('comms-panel'); wrap.innerHTML = '';
+  const typeSel = el('select', {});
+  ['Ship to Ship','Ship to Shore','Internal Communications','Subspace Communications'].forEach(t=>typeSel.appendChild(el('option',{value:t},t)));
+  typeSel.value = STATE.commType;
+  const lists = {
+    'Ship to Ship': STATE.contacts.map(c=>c.name),
+    'Ship to Shore': ['Starbase 24','Pacifica Colony','Federation Outpost Delta'],
+    'Internal Communications': ['Bridge','Engineering','Sickbay','Security','Operations'],
+    'Subspace Communications': ['Starfleet Command','Starfleet Medical','Diplomatic Corps']
+  };
+  const recSel = el('select', {});
+  function fillRec() { recSel.innerHTML=''; lists[STATE.commType].forEach(r=>recSel.appendChild(el('option',{value:r},r))); recSel.value = STATE.commTarget || lists[STATE.commType][0]; }
+  fillRec();
+  typeSel.onchange = (e) => { STATE.commType = e.target.value; STATE.commTarget = lists[STATE.commType][0]; persist(); fillRec(); };
+  recSel.onchange = (e) => { STATE.commTarget = e.target.value; persist(); };
+  wrap.appendChild(typeSel); wrap.appendChild(recSel);
+  const msgIn = el('input', { type:'text', placeholder:'Message', value: STATE.commMessage });
+  msgIn.onchange = (e) => { STATE.commMessage = e.target.value; persist(); };
+  wrap.appendChild(msgIn);
+  wrap.appendChild(el('button', { class:'btn btn-accent', style:'align-self:flex-start;', onclick: () => { log('Hail sent to '+(STATE.commTarget||lists[STATE.commType][0])+'.', '#5ec8d8'); persist(); renderAll(); } }, 'Hail'));
+}
+
+function renderTransporter() {
+  const wrap = document.getElementById('transporter-panel'); wrap.innerHTML = '';
+  const typeSel = el('select', {});
+  ['Standard Transporter','Emergency Transporter','Cargo Transporter','Site-to-Site'].forEach(t=>typeSel.appendChild(el('option',{value:t},t)));
+  typeSel.value = STATE.transporterType; typeSel.onchange = (e)=>{ STATE.transporterType=e.target.value; persist(); };
+  wrap.appendChild(typeSel);
+  const targetSel = el('select', {});
+  STATE.contacts.forEach(c=>targetSel.appendChild(el('option',{value:c.name},c.name)));
+  targetSel.value = STATE.transporterTarget || (STATE.contacts[0]&&STATE.contacts[0].name);
+  targetSel.onchange = (e)=>{ STATE.transporterTarget=e.target.value; persist(); };
+  wrap.appendChild(el('div',{class:'col'},[el('label',{class:'label'},'Target Contact'), targetSel]));
+  const dirRow = el('div', { class:'row gap-6' });
+  dirRow.appendChild(el('button', { class:'btn'+(STATE.transporterDir==='to'?' btn-accent':''), onclick: () => { STATE.transporterDir='to'; persist(); renderTransporter(); } }, 'Beaming To'));
+  dirRow.appendChild(el('button', { class:'btn'+(STATE.transporterDir==='from'?' btn-accent':''), onclick: () => { STATE.transporterDir='from'; persist(); renderTransporter(); } }, 'Beaming From'));
+  wrap.appendChild(dirRow);
+  const noteIn = el('input', { type:'text', placeholder:'Coordinates / notes', value: STATE.transporterNote });
+  noteIn.onchange = (e)=>{ STATE.transporterNote=e.target.value; persist(); };
+  wrap.appendChild(noteIn);
+  wrap.appendChild(el('button', { class:'btn btn-accent', style:'align-self:flex-start;', onclick: () => {
+    const tgt = STATE.transporterTarget || (STATE.contacts[0]&&STATE.contacts[0].name);
+    log(STATE.transporterType+' energized — '+(STATE.transporterDir==='to'?'Beaming to ':'Beaming from ')+tgt+'.', '#5ec8d8');
+    persist(); renderAll();
+  } }, 'Energize'));
+}
+
+function renderMessages() {
+  const wrap = document.getElementById('messages'); wrap.innerHTML = '';
+  STATE.messages.forEach((m) => wrap.appendChild(el('div', { class:'tiny', style:'color:'+m.color+';' }, m.text)));
+}
+
+const SHIP_ZONES = [['forward','Forward',92],['starboard','Starboard',90],['port','Port',89],['dorsal','Dorsal',91],['aft','Aft',45],['ventral','Ventral',60]];
+function renderShieldsQuick() {
+  document.getElementById('shields-toggle').textContent = STATE.shieldsRaised ? 'Lower Shields' : 'Raise Shields';
+  document.getElementById('shields-toggle').className = 'btn btn-sm' + (STATE.shieldsRaised ? ' btn-accent' : '');
+  document.getElementById('shields-toggle').onclick = () => {
+    STATE.shieldsRaised = !STATE.shieldsRaised;
+    log(STATE.shieldsRaised ? 'Shields raised.' : 'Shields lowered.', STATE.shieldsRaised ? '#7fb069' : '#e05d5d');
+    persist(); renderAll();
+  };
+  const overall = STATE.shieldsRaised ? Math.round(SHIP_ZONES.reduce((a,z)=>a+z[2],0)/SHIP_ZONES.length) : 0;
+  document.getElementById('shields-status').innerHTML = '';
+  document.getElementById('shields-status').appendChild(el('span', { style: 'color:'+(STATE.shieldsRaised?'#7fb069':'#e05d5d')+';' }, 'Status: '+(STATE.shieldsRaised?'RAISED':'LOWERED')+' \u00b7 Overall '+overall+'%'));
+  const wrap = document.getElementById('shields-zones'); wrap.innerHTML = '';
+  SHIP_ZONES.forEach(([key,name,base]) => {
+    const val = STATE.shieldsRaised ? base : 0;
+    wrap.appendChild(el('div', { style:'border:1px solid var(--panel-border); border-radius:6px; padding:8px; background:#0b1015;' }, [
+      el('div', { class:'tiny dim' }, name), el('div', { class:'small', style:'font-weight:700; color:'+statusColor(val)+';' }, val+'%')
+    ]));
+  });
+}
+
+
+function renderAll() {
+  renderContacts(); renderPlot(); renderTargeting(); renderShieldsQuick(); renderPhasers(); renderMagazineStatus(); renderTorpedoes(); renderComms(); renderTransporter(); renderMessages();
+}
+
+applyTheme(); renderAlertButtons(); renderAll();
+</script>
+</body>
+</html>

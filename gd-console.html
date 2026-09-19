@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GD Console — STAB Demo</title>
+<link rel="stylesheet" href="style.css">
+<script src="utils.js"></script>
+</head>
+<body>
+<div class="app-frame">
+  <div class="nav-links">
+    <a href="index.html">&larr; Demo Home</a>
+    <a href="character-sheet.html">Character Sheet</a>
+    <a href="character-screen.html">Character Screen</a>
+    <a href="engineering.html">Engineering</a>
+    <a href="tactical.html">Tactical</a>
+    <a href="npc-ships.html">NPC Ship Library</a>
+  </div>
+  <div class="top-bar">
+    <div>
+      <div class="eyebrow">Game Director Console</div>
+      <div class="title" style="font-size:20px;">USS Tempest &middot; Master Control</div>
+    </div>
+    <div class="row gap-8" id="alert-buttons"></div>
+  </div>
+  <div class="row gap-6 wrap" id="tabs" style="margin-bottom:14px;"></div>
+  <div id="tab-content"></div>
+</div>
+
+<script>
+const BASE_ACCENT = '#4a9eff';
+const STATE = loadState('gd-console', {
+  alertLevel: 'normal', activeTab: 'tactical',
+  gdShields: { forward:92, starboard:90, port:89, dorsal:91, aft:45, ventral:60 },
+  attackDamage: '20', attackZone: 'random', attackLog: '',
+  gdEngSystems: { warp:96, impulse:100, slipstream:75, lifesupport:100, power:100, structural:97, rcs:90 },
+  engDamage: '15', engDamageTarget: 'warp', engLog: '',
+  templateDraft: 'tpl-kbop',
+  npcInstances: [
+    { id:'gd-inst-1', designation:'Hunter Vessel Alpha', origin:'Klingon', className:"B'rel-class Bird-of-Prey", templateName:'Klingon Bird-of-Prey', lifeSigns:'12', sysShields:'75', sysWeapons:'80', sysEngines:'85', sysSensors:'70', notes:'', damageLog:[] }
+  ]
+});
+function persist() { saveState('gd-console', STATE); }
+function applyTheme() { applyAlertTheme(STATE.alertLevel, BASE_ACCENT); }
+function statusColor(pct) { const n=parseFloat(pct); if(isNaN(n)) return '#9fb3c0'; return n>=80?'#7fb069':n>=50?'#e8a33d':'#e05d5d'; }
+
+const TABS = [
+  { key:'tactical', label:'Tactical' }, { key:'engineering', label:'Engineering' }, { key:'science', label:'Science' },
+  { key:'medical', label:'Medical' }, { key:'security', label:'Security' }, { key:'navigation', label:'Navigation' },
+  { key:'characters', label:'Player Characters' }, { key:'npcships', label:'NPC Ships' }
+];
+const TEMPLATE_OPTIONS = [
+  { id:'tpl-kbop', name:'Klingon Bird-of-Prey', origin:'Klingon', className:"B'rel-class", lifeSigns:'12', sysShields:'75', sysWeapons:'80', sysEngines:'85', sysSensors:'70' },
+  { id:'tpl-ferm', name:'Ferengi Marauder', origin:'Ferengi', className:"D'Kora-class", lifeSigns:'60', sysShields:'60', sysWeapons:'55', sysEngines:'65', sysSensors:'75' }
+];
+const CHARACTERS = [
+  { name:'Cmdr. T\u2019Lira Vash', rank:'Commander', position:'Executive Officer', status:'On Duty', color:'#7fb069' },
+  { name:'Lt. Marcus Kade', rank:'Lieutenant', position:'Chief of Security', status:'On Duty', color:'#7fb069' },
+  { name:'Ens. Sara Ohin', rank:'Ensign', position:'Science Officer', status:'Off Duty', color:'#6b7d89' },
+  { name:'Lt. Cmdr. Dael Ferro', rank:'Lt. Commander', position:'Chief Engineering Officer', status:'Away Team', color:'#e8a33d' }
+];
+
+function renderAlertButtons() {
+  const wrap = document.getElementById('alert-buttons'); wrap.innerHTML = '';
+  ['normal','yellow','red'].forEach((lvl) => {
+    const labels = { normal:'Normal', yellow:'Yellow Alert', red:'Red Alert' };
+    wrap.appendChild(el('button', { class:'btn'+(STATE.alertLevel===lvl?' btn-accent':''), onclick: () => { STATE.alertLevel=lvl; persist(); applyTheme(); renderAlertButtons(); } }, labels[lvl]));
+  });
+}
+
+function renderTabs() {
+  const wrap = document.getElementById('tabs'); wrap.innerHTML = '';
+  TABS.forEach((t) => wrap.appendChild(el('button', { class:'btn'+(STATE.activeTab===t.key?' btn-accent':''), onclick: () => { STATE.activeTab=t.key; persist(); renderContent(); } }, t.label)));
+}
+
+function placeholderPanel(title, text) {
+  return el('div', { class:'panel' }, [el('div',{class:'panel-h'},title), el('div',{class:'small faint'},text)]);
+}
+
+function renderTacticalTab(c) {
+  const p = el('div', { class:'panel' });
+  p.appendChild(el('div', { class:'panel-h' }, 'SHIELDS — QUICK CONTROL'));
+  p.appendChild(el('div', { class:'tiny dimmer', style:'margin-bottom:12px;' }, 'Direct field edits for GD use. Change a value manually, or auto-resolve an incoming attack.'));
+  const grid = el('div', { class:'grid g6', style:'margin-bottom:14px;' });
+  Object.entries(STATE.gdShields).forEach(([key,val]) => {
+    const input = el('input', { type:'text', value: val });
+    input.onchange = (e) => { STATE.gdShields[key] = Math.max(0,Math.min(100,parseInt(e.target.value,10)||0)); persist(); };
+    grid.appendChild(el('div', { class:'col' }, [el('label',{class:'label'},key.charAt(0).toUpperCase()+key.slice(1)), input]));
+  });
+  p.appendChild(grid);
+  const row = el('div', { class:'row items-end gap-8 wrap' });
+  const dmgIn = el('input',{type:'text',value:STATE.attackDamage,style:'width:160px;'}); dmgIn.onchange=(e)=>{STATE.attackDamage=e.target.value;persist();};
+  const zoneSel = el('select', { style:'flex-grow:1; min-width:160px;' });
+  zoneSel.appendChild(el('option',{value:'random'},'Random'));
+  Object.keys(STATE.gdShields).forEach(k=>zoneSel.appendChild(el('option',{value:k},k.charAt(0).toUpperCase()+k.slice(1))));
+  zoneSel.value = STATE.attackZone; zoneSel.onchange=(e)=>{STATE.attackZone=e.target.value;persist();};
+  row.appendChild(el('div',{class:'col',style:'width:160px;'},[el('label',{class:'label'},'Attack Damage'),dmgIn]));
+  row.appendChild(el('div',{class:'col flex-grow',style:'min-width:160px;'},[el('label',{class:'label'},'Target Zone'),zoneSel]));
+  row.appendChild(el('button', { class:'btn btn-accent', onclick: () => {
+    const dmg = Math.max(0, parseInt(STATE.attackDamage,10)||0);
+    const keys = Object.keys(STATE.gdShields);
+    const target = STATE.attackZone==='random' ? keys[Math.floor(Math.random()*keys.length)] : STATE.attackZone;
+    const next = Math.max(0, STATE.gdShields[target]-dmg);
+    STATE.gdShields[target] = next;
+    STATE.attackLog = 'Enemy attack resolved: '+target.charAt(0).toUpperCase()+target.slice(1)+' shield hit for '+dmg+' \u2014 now '+next+'%.';
+    persist(); renderContent();
+  } }, 'Resolve Enemy Attack'));
+  p.appendChild(row);
+  if (STATE.attackLog) p.appendChild(el('div', { class:'tiny', style:'color:#e8a33d; margin-top:10px;' }, STATE.attackLog));
+  c.appendChild(p);
+  c.appendChild(el('div', { class:'panel' }, [
+    el('div',{class:'panel-h'},'TACTICAL — FULL CONSOLE'),
+    el('div',{class:'small dim',style:'margin-bottom:12px;'},'Weapons fire, sensor contacts, targeting, communications, and transporter control — the same visual station a Tactical Officer plays from.'),
+    el('a',{class:'link-btn',href:'tactical.html'},'Open Full Tactical Console \u2192')
+  ]));
+}
+
+function renderEngineeringTab(c) {
+  const p = el('div', { class:'panel' });
+  p.appendChild(el('div', { class:'panel-h' }, 'SHIP SYSTEMS — QUICK CONTROL'));
+  p.appendChild(el('div', { class:'tiny dimmer', style:'margin-bottom:12px;' }, 'Direct field edits for GD use, or auto-resolve system damage.'));
+  const labels = { warp:'Warp Drive', impulse:'Impulse Drive', slipstream:'Slipstream', lifesupport:'Life Support', power:'Emergency Power', structural:'Structural Integrity', rcs:'RCS Thrusters' };
+  const grid = el('div', { class:'grid g4', style:'margin-bottom:14px;' });
+  Object.entries(STATE.gdEngSystems).forEach(([key,val]) => {
+    const input = el('input', { type:'text', value: val });
+    input.onchange = (e) => { STATE.gdEngSystems[key] = Math.max(0,Math.min(100,parseInt(e.target.value,10)||0)); persist(); };
+    grid.appendChild(el('div', { class:'col' }, [el('label',{class:'label'},labels[key]), input]));
+  });
+  p.appendChild(grid);
+  const row = el('div', { class:'row items-end gap-8 wrap' });
+  const dmgIn = el('input',{type:'text',value:STATE.engDamage,style:'width:160px;'}); dmgIn.onchange=(e)=>{STATE.engDamage=e.target.value;persist();};
+  const sysSel = el('select', { style:'flex-grow:1; min-width:160px;' });
+  Object.keys(STATE.gdEngSystems).forEach(k=>sysSel.appendChild(el('option',{value:k},labels[k])));
+  sysSel.value = STATE.engDamageTarget; sysSel.onchange=(e)=>{STATE.engDamageTarget=e.target.value;persist();};
+  row.appendChild(el('div',{class:'col',style:'width:160px;'},[el('label',{class:'label'},'Damage Amount'),dmgIn]));
+  row.appendChild(el('div',{class:'col flex-grow',style:'min-width:160px;'},[el('label',{class:'label'},'System'),sysSel]));
+  row.appendChild(el('button', { class:'btn btn-accent', onclick: () => {
+    const dmg = Math.max(0, parseInt(STATE.engDamage,10)||0);
+    const next = Math.max(0, STATE.gdEngSystems[STATE.engDamageTarget]-dmg);
+    STATE.gdEngSystems[STATE.engDamageTarget] = next;
+    STATE.engLog = labels[STATE.engDamageTarget]+' took '+dmg+' damage \u2014 now '+next+'%.';
+    persist(); renderContent();
+  } }, 'Resolve System Damage'));
+  p.appendChild(row);
+  if (STATE.engLog) p.appendChild(el('div', { class:'tiny', style:'color:#e8a33d; margin-top:10px;' }, STATE.engLog));
+  c.appendChild(p);
+  c.appendChild(el('div', { class:'panel' }, [
+    el('div',{class:'panel-h'},'ENGINEERING — FULL CONSOLE'),
+    el('div',{class:'small dim',style:'margin-bottom:12px;'},'System status detail, reactor management, shield generators, RCS thrusters, and Damage Control crew dispatch.'),
+    el('a',{class:'link-btn',href:'engineering.html'},'Open Full Engineering Console \u2192')
+  ]));
+}
+
+function renderCharactersTab(c) {
+  const p = el('div', { class:'panel' });
+  p.appendChild(el('div', { class:'panel-h' }, 'PLAYER CHARACTERS'));
+  CHARACTERS.forEach((ch) => {
+    p.appendChild(el('div', { class:'row justify-between items-center card' }, [
+      el('div', {}, [el('div',{style:'font-weight:600;'},ch.name), el('div',{class:'tiny dim'},ch.rank+' \u00b7 '+ch.position)]),
+      el('div', { class:'row items-center gap-14' }, [el('div',{class:'tiny',style:'color:'+ch.color+';'},ch.status), el('a',{class:'link-btn',style:'padding:6px 12px; font-size:12px;',href:'character-sheet.html'},'View Sheet \u2192')])
+    ]));
+  });
+  c.appendChild(p);
+}
+
+const DAMAGE_TARGETS = ['Shields','Weapons','Engines','Sensors','Life Signs'];
+const DAMAGE_FIELD_MAP = {Shields:'sysShields',Weapons:'sysWeapons',Engines:'sysEngines',Sensors:'sysSensors','Life Signs':'lifeSigns'};
+
+function renderNpcShipsTab(c) {
+  const p = el('div', { class:'panel' });
+  p.appendChild(el('div', { class:'row justify-between items-center', style:'margin-bottom:12px;' }, [
+    el('div',{class:'panel-h',style:'margin-bottom:0;'},'ACTIVE NPC SHIPS'),
+    el('a',{class:'link-btn',style:'padding:8px 14px; font-size:12px;',href:'npc-ships.html'},'Manage Templates \u2192')
+  ]));
+  const addRow = el('div', { class:'row items-end gap-8', style:'margin-bottom:16px; padding:14px; border:1px solid var(--panel-border); border-radius:8px; background:var(--panel-bg);' });
+  const tplSel = el('select', { style:'flex-grow:1;' });
+  TEMPLATE_OPTIONS.forEach(t=>tplSel.appendChild(el('option',{value:t.id},t.name+' ('+t.origin+')')));
+  tplSel.value = STATE.templateDraft; tplSel.onchange=(e)=>{STATE.templateDraft=e.target.value;persist();};
+  addRow.appendChild(el('div',{class:'col flex-grow'},[el('label',{class:'label'},'Add Ship From Templates'),tplSel]));
+  addRow.appendChild(el('button', { class:'btn btn-accent', onclick: () => {
+    const tpl = TEMPLATE_OPTIONS.find(t=>t.id===STATE.templateDraft) || TEMPLATE_OPTIONS[0];
+    STATE.npcInstances.push({ id:'gd-inst-'+Date.now(), designation: tpl.name, origin: tpl.origin, className: tpl.className, templateName: tpl.name,
+      lifeSigns: tpl.lifeSigns, sysShields: tpl.sysShields, sysWeapons: tpl.sysWeapons, sysEngines: tpl.sysEngines, sysSensors: tpl.sysSensors, notes:'', damageLog:[] });
+    persist(); renderContent();
+  } }, 'Add to Encounter'));
+  p.appendChild(addRow);
+
+  if (!STATE.npcInstances.length) p.appendChild(el('div',{class:'faint small'},'No active NPC ships — add one above.'));
+  STATE.npcInstances.forEach((inst) => {
+    const card = el('div', { class:'card' });
+    const head = el('div', { class:'row justify-between items-start gap-14' });
+    const left = el('div', { style:'flex-grow:1;' });
+    left.appendChild(el('div', { style:'font-weight:600;' }, inst.designation));
+    left.appendChild(el('div', { class:'tiny dim' }, inst.origin+' \u00b7 '+inst.className+' \u00b7 Life Signs: '+inst.lifeSigns));
+    left.appendChild(el('div', { class:'tiny dimmer', style:'margin-top:4px;' }, [
+      'Shields ', el('span',{style:'color:'+statusColor(inst.sysShields)+';'},inst.sysShields+'%'), ' \u00b7 Weapons ', el('span',{style:'color:'+statusColor(inst.sysWeapons)+';'},inst.sysWeapons+'%'),
+      ' \u00b7 Engines ', el('span',{style:'color:'+statusColor(inst.sysEngines)+';'},inst.sysEngines+'%'), ' \u00b7 Sensors ', el('span',{style:'color:'+statusColor(inst.sysSensors)+';'},inst.sysSensors+'%')
+    ]));
+    if (inst.damageLog.length) { const lw=el('div',{style:'margin-top:8px;'}); inst.damageLog.forEach(t=>lw.appendChild(el('div',{class:'tiny',style:'color:#e8a33d;'},'\u2022 '+t))); left.appendChild(lw); }
+    const notesTa = el('textarea', { rows:2, style:'margin-top:8px;' }, inst.notes); notesTa.onchange=(e)=>{inst.notes=e.target.value;persist();};
+    left.appendChild(el('div',{class:'col',style:'margin-top:6px;'},[el('label',{class:'label'},'Notes / Disposition'),notesTa]));
+    head.appendChild(left);
+    const btns = el('div', { class:'col gap-8' });
+    btns.appendChild(el('button', { class:'btn btn-sm', style:'border-color:#e8a33d; color:#e8a33d;', onclick: () => openDmg(inst) }, 'Log Damage'));
+    btns.appendChild(el('button', { class:'btn btn-sm', onclick: () => { STATE.npcInstances = STATE.npcInstances.filter(x=>x.id!==inst.id); persist(); renderContent(); } }, 'Retire'));
+    head.appendChild(btns);
+    card.appendChild(head);
+    card.appendChild(el('div', { id:'gd-dmg-'+inst.id }));
+    p.appendChild(card);
+  });
+  c.appendChild(p);
+}
+
+function openDmg(inst) {
+  const holder = document.getElementById('gd-dmg-'+inst.id);
+  if (holder.childNodes.length) { holder.innerHTML=''; return; }
+  const sel = el('select', { style:'width:140px;' }); DAMAGE_TARGETS.forEach(t=>sel.appendChild(el('option',{value:t},t)));
+  const amt = el('input', { type:'text', style:'width:90px;' });
+  const form = el('div', { class:'row items-end gap-8 wrap', style:'margin-top:10px; padding-top:10px; border-top:1px solid var(--panel-border);' });
+  form.appendChild(el('div',{class:'col'},[el('label',{class:'label'},'System'),sel]));
+  form.appendChild(el('div',{class:'col'},[el('label',{class:'label'},'Amount'),amt]));
+  form.appendChild(el('button',{class:'btn btn-accent',onclick:()=>{
+    const a = parseFloat(amt.value); if (isNaN(a)||a===0) { holder.innerHTML=''; return; }
+    const field = DAMAGE_FIELD_MAP[sel.value]; const cur = parseFloat(inst[field])||0; const isPct = field!=='lifeSigns';
+    const next = isPct?Math.max(0,Math.min(100,cur-a)):Math.max(0,cur-a);
+    inst[field]=String(next); inst.damageLog.push(sel.value+' -'+a+(isPct?'% ':' ')+'(now '+next+(isPct?'%':'')+')');
+    holder.innerHTML=''; persist(); renderContent();
+  }},'Apply'));
+  form.appendChild(el('button',{class:'btn',onclick:()=>{holder.innerHTML='';}},'Cancel'));
+  holder.appendChild(form);
+}
+
+function renderContent() {
+  renderTabs();
+  const c = document.getElementById('tab-content'); c.innerHTML = '';
+  if (STATE.activeTab==='tactical') renderTacticalTab(c);
+  else if (STATE.activeTab==='engineering') renderEngineeringTab(c);
+  else if (STATE.activeTab==='science') c.appendChild(placeholderPanel('SCIENCE','Not yet designed. This will cover sensor analysis, scientific instrumentation, anomaly tracking, and away-mission science support.'));
+  else if (STATE.activeTab==='medical') c.appendChild(placeholderPanel('MEDICAL','Not yet designed. This will cover Sickbay status, patient tracking, and crew Health Status updates.'));
+  else if (STATE.activeTab==='security') c.appendChild(placeholderPanel('SECURITY','Not yet designed. This will cover armory/weapons locker inventory, brig status, and internal security alerts.'));
+  else if (STATE.activeTab==='navigation') c.appendChild(placeholderPanel('NAVIGATION / HELM','Not yet designed. This will cover course plotting, warp/impulse speed control, and heading/position.'));
+  else if (STATE.activeTab==='characters') renderCharactersTab(c);
+  else if (STATE.activeTab==='npcships') renderNpcShipsTab(c);
+}
+
+applyTheme(); renderAlertButtons(); renderContent();
+</script>
+</body>
+</html>

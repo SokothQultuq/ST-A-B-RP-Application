@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Character Sheet — STAB Demo</title>
+<link rel="stylesheet" href="style.css">
+<script src="utils.js"></script>
+</head>
+<body>
+<div class="app-frame">
+  <div class="nav-links">
+    <a href="index.html">&larr; Demo Home</a>
+    <a href="character-screen.html">Character Screen</a>
+    <a href="engineering.html">Engineering</a>
+    <a href="tactical.html">Tactical</a>
+    <a href="gd-console.html">GD Console</a>
+  </div>
+
+  <div class="top-bar">
+    <div class="eyebrow">Character Record</div>
+  </div>
+
+  <div class="row items-end" style="margin-bottom: 16px;">
+    <div class="col" style="width: 96px;">
+      <div style="width: 96px; height: 96px; border-radius: 8px; border: 1px solid #2a3541; background: #121a21; display:flex; align-items:center; justify-content:center; color:#4d5f6c; font-size:11px; text-transform:uppercase;">Photo</div>
+    </div>
+    <div class="col gap-8" style="flex-grow:1;">
+      <input type="text" id="f-name" style="font-family:'Orbitron',sans-serif; font-size:28px; font-weight:700; width: 360px;">
+      <div class="row gap-8">
+        <div class="dim small" id="d-rank"></div>
+      </div>
+      <div class="dimmer tiny" id="d-species"></div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="row gap-8 wrap" id="tab-buttons" style="margin-bottom:16px;"></div>
+
+  <div class="panel" id="tab-content" style="min-height: 420px;"></div>
+</div>
+
+<script>
+const STATE = loadState('character-sheet', {
+  name: '', rank: '', species: '', subspecies: '',
+  dob: '', height: '', weight: '', eyeColor: '', hairColor: '', hairStyle: '', facialHair: '', description: '',
+  familyMembers: [], serviceRecords: [], medicalRecords: [],
+  academyTerms: [{ id: 'term-academy', label: 'Starfleet Academy', years: [1,2,3,4].map(n => ({ id: 'year-'+n, label: 'Year '+n, classes: [], notes: [] })) }],
+  activeTab: 'physical'
+});
+function persist() { saveState('character-sheet', STATE); }
+
+const TABS = [
+  { id: 'physical', label: 'Character Description' },
+  { id: 'family', label: 'Family History' },
+  { id: 'academy', label: 'Starfleet Academy Record' },
+  { id: 'service', label: 'Starfleet Service Record' },
+  { id: 'medical', label: 'Starfleet Medical Record' }
+];
+
+function renderHeader() {
+  document.getElementById('f-name').value = STATE.name || '[Character Name]';
+  document.getElementById('d-rank').textContent = STATE.rank || '[Rank]';
+  document.getElementById('d-species').textContent = (STATE.species || '[Species]') + ', ' + (STATE.subspecies || '[Subspecies]');
+}
+document.getElementById('f-name').addEventListener('change', (e) => { STATE.name = e.target.value; persist(); });
+
+function renderTabs() {
+  const wrap = document.getElementById('tab-buttons');
+  wrap.innerHTML = '';
+  TABS.forEach((t) => {
+    const btn = el('button', {
+      class: 'btn' + (STATE.activeTab === t.id ? ' btn-accent' : ''),
+      onclick: () => { STATE.activeTab = t.id; persist(); renderAll(); }
+    }, t.label);
+    wrap.appendChild(btn);
+  });
+}
+
+function field(label, value, onChange, width) {
+  const wrap = el('div', { class: 'col' + (width ? '' : '') });
+  if (width) wrap.style.width = width;
+  wrap.appendChild(el('label', { class: 'label' }, label));
+  const input = el('input', { type: 'text', value: value || '' });
+  input.addEventListener('change', (e) => onChange(e.target.value));
+  wrap.appendChild(input);
+  return wrap;
+}
+
+function renderPhysical(container) {
+  container.appendChild(el('div', { class: 'panel-h' }, 'CHARACTER DESCRIPTION'));
+  const row1 = el('div', { class: 'grid g3', style: 'margin-bottom:16px;' });
+  row1.appendChild(field('Rank', STATE.rank, (v) => { STATE.rank = v; persist(); renderHeader(); }));
+  row1.appendChild(field('Species', STATE.species, (v) => { STATE.species = v; persist(); renderHeader(); }));
+  row1.appendChild(field('Subspecies', STATE.subspecies, (v) => { STATE.subspecies = v; persist(); renderHeader(); }));
+  container.appendChild(row1);
+
+  const row2 = el('div', { class: 'grid g3', style: 'margin-bottom:16px;' });
+  const map = [['dob','Date of Birth'],['height','Height'],['weight','Weight'],['eyeColor','Eye Color'],['hairColor','Hair Color'],['hairStyle','Hair Style']];
+  map.forEach(([key, label]) => row2.appendChild(field(label, STATE[key], (v) => { STATE[key] = v; persist(); })));
+  container.appendChild(row2);
+
+  container.appendChild(field('Facial Hair Description', STATE.facialHair, (v) => { STATE.facialHair = v; persist(); }));
+  container.appendChild(el('div', { style: 'height:12px;' }));
+  const descWrap = el('div', { class: 'col' });
+  descWrap.appendChild(el('label', { class: 'label' }, 'General Physical Description'));
+  const ta = el('textarea', { rows: 3 }, STATE.description || '');
+  ta.addEventListener('change', (e) => { STATE.description = e.target.value; persist(); });
+  descWrap.appendChild(ta);
+  container.appendChild(descWrap);
+}
+
+function renderFamily(container) {
+  container.appendChild(el('div', { class: 'panel-h' }, 'FAMILY DEMOGRAPHICS & HISTORY'));
+  const form = el('div', { class: 'row items-end wrap gap-8', style: 'padding:16px; border:1px solid var(--panel-border); border-radius:8px; margin-bottom:16px;' });
+  const nameIn = el('input', { type: 'text', placeholder: "e.g. T'Lira" });
+  const relIn = el('input', { type: 'text', placeholder: 'e.g. Mother' });
+  const profIn = el('input', { type: 'text', placeholder: 'e.g. Diplomat' });
+  const nameWrap = el('div', { class: 'col flex-grow' }, [el('label', { class: 'label' }, 'Name of Family Member'), nameIn]);
+  const relWrap = el('div', { class: 'col flex-grow' }, [el('label', { class: 'label' }, 'Relationship'), relIn]);
+  const profWrap = el('div', { class: 'col flex-grow' }, [el('label', { class: 'label' }, 'Profession'), profIn]);
+  const addBtn = el('button', { class: 'btn btn-accent', onclick: () => {
+    if (!nameIn.value.trim()) return;
+    STATE.familyMembers.push({ id: 'fam-' + Date.now(), name: nameIn.value.trim(), relationship: relIn.value.trim(), profession: profIn.value.trim(), notes: [] });
+    persist(); renderAll();
+  }}, 'Add');
+  form.appendChild(nameWrap); form.appendChild(relWrap); form.appendChild(profWrap); form.appendChild(addBtn);
+  container.appendChild(form);
+
+  if (STATE.familyMembers.length === 0) {
+    container.appendChild(el('div', { class: 'faint small' }, 'No family records yet — add one above.'));
+  }
+  STATE.familyMembers.forEach((m) => {
+    const card = el('div', { class: 'card' });
+    const head = el('div', { class: 'row justify-between items-center' });
+    head.appendChild(el('div', {}, [
+      el('div', { style: 'font-weight:600;' }, m.name),
+      el('div', { class: 'tiny dim' }, m.relationship + ' \u00b7 ' + m.profession)
+    ]));
+    const noteBtn = el('button', { class: 'btn btn-sm', onclick: () => {
+      const text = prompt('Add a note about ' + m.name + ':');
+      if (text) { m.notes.push(text); persist(); renderAll(); }
+    }}, 'Add Note');
+    head.appendChild(noteBtn);
+    card.appendChild(head);
+    if (m.notes.length) {
+      const notesWrap = el('div', { style: 'margin-top:10px; padding-top:10px; border-top:1px solid var(--panel-border);' });
+      m.notes.forEach((n) => notesWrap.appendChild(el('div', { class: 'tiny dim' }, '\u2022 ' + n)));
+      card.appendChild(notesWrap);
+    }
+    container.appendChild(card);
+  });
+}
+
+function renderAcademy(container) {
+  container.appendChild(el('div', { class: 'panel-h' }, 'STARFLEET ACADEMY RECORD'));
+  STATE.academyTerms.forEach((term) => {
+    const termBox = el('div', { style: 'border:1px solid #2a3541; border-radius:10px; padding:16px; margin-bottom:14px; background:#0a0e12;' });
+    termBox.appendChild(el('div', { style: 'font-weight:700; color:var(--accent); margin-bottom:10px;' }, term.label));
+    term.years.forEach((yr) => {
+      const yrBox = el('div', { class: 'card' });
+      const head = el('div', { class: 'row justify-between items-center' });
+      head.appendChild(el('div', { style: 'font-weight:600;' }, yr.label));
+      const noteBtn = el('button', { class: 'btn btn-sm', onclick: () => {
+        const text = prompt('Note for ' + yr.label + ':');
+        if (text) { yr.notes.push(text); persist(); renderAll(); }
+      }}, 'Add Note');
+      head.appendChild(noteBtn);
+      yrBox.appendChild(head);
+      if (yr.classes.length) {
+        yr.classes.forEach((c) => yrBox.appendChild(el('div', { class: 'tiny dim' }, c.name + (c.grade ? ' \u00b7 Grade: ' + c.grade : ''))));
+      }
+      const addRow = el('div', { class: 'row items-end gap-8', style: 'margin-top:10px;' });
+      const cIn = el('input', { type: 'text', placeholder: 'Class name' });
+      const gIn = el('input', { type: 'text', placeholder: 'Grade', style: 'width:90px;' });
+      const addBtn = el('button', { class: 'btn btn-sm', onclick: () => {
+        if (!cIn.value.trim()) return;
+        yr.classes.push({ name: cIn.value.trim(), grade: gIn.value.trim() });
+        persist(); renderAll();
+      }}, 'Add Class');
+      addRow.appendChild(el('div', { class: 'col flex-grow' }, cIn));
+      addRow.appendChild(el('div', { class: 'col', style: 'width:90px;' }, gIn));
+      addRow.appendChild(addBtn);
+      yrBox.appendChild(addRow);
+      if (yr.notes.length) {
+        const nWrap = el('div', { style: 'margin-top:8px;' });
+        yr.notes.forEach((n) => nWrap.appendChild(el('div', { class: 'tiny dim' }, '\u2022 ' + n)));
+        yrBox.appendChild(nWrap);
+      }
+      termBox.appendChild(yrBox);
+    });
+    const yearAddRow = el('div', { class: 'row items-end gap-8' });
+    const ylIn = el('input', { type: 'text', placeholder: 'e.g. Year 5' });
+    yearAddRow.appendChild(el('div', { class: 'col flex-grow' }, [el('label', { class: 'label' }, 'Add Year to ' + term.label), ylIn]));
+    yearAddRow.appendChild(el('button', { class: 'btn', onclick: () => {
+      term.years.push({ id: 'year-extra-' + Date.now(), label: ylIn.value.trim() || 'Additional Year', classes: [], notes: [] });
+      persist(); renderAll();
+    }}, 'Add Year'));
+    termBox.appendChild(yearAddRow);
+    container.appendChild(termBox);
+  });
+
+  const newTermRow = el('div', { class: 'row items-end gap-8', style: 'padding:16px; border:1px dashed #2a3541; border-radius:8px;' });
+  const tIn = el('input', { type: 'text', placeholder: 'e.g. Command School' });
+  newTermRow.appendChild(el('div', { class: 'col flex-grow' }, [el('label', { class: 'label' }, 'Add Additional Term'), tIn]));
+  newTermRow.appendChild(el('button', { class: 'btn btn-accent', onclick: () => {
+    STATE.academyTerms.push({ id: 'term-' + Date.now(), label: tIn.value.trim() || 'Additional Term', years: [] });
+    persist(); renderAll();
+  }}, 'Add Term'));
+  container.appendChild(newTermRow);
+}
+
+function renderService(container) {
+  container.appendChild(el('div', { class: 'panel-h' }, 'STARFLEET SERVICE RECORD'));
+  const form = el('div', { style: 'padding:16px; border:1px solid var(--panel-border); border-radius:8px; margin-bottom:16px;' });
+  const r1 = el('div', { class: 'row gap-8 wrap' });
+  const assignIn = el('input', { type: 'text', placeholder: 'e.g. USS Tempest NCC-1852-A' });
+  const dateIn = el('input', { type: 'text', placeholder: 'e.g. Jan 10, 2368' });
+  const sdIn = el('input', { type: 'text', placeholder: 'e.g. 47024.65' });
+  r1.appendChild(el('div', { class: 'col flex-grow' }, [el('label', { class: 'label' }, 'Assignment'), assignIn]));
+  r1.appendChild(el('div', { class: 'col', style: 'width:170px;' }, [el('label', { class: 'label' }, 'Date Reported'), dateIn]));
+  r1.appendChild(el('div', { class: 'col', style: 'width:140px;' }, [el('label', { class: 'label' }, 'Stardate'), sdIn]));
+  const r2 = el('div', { class: 'row items-end gap-8 wrap', style: 'margin-top:10px;' });
+  const posIn = el('input', { type: 'text', placeholder: 'e.g. Executive Officer' });
+  const rankIn = el('input', { type: 'text', placeholder: 'e.g. Commander' });
+  const shiftIn = el('input', { type: 'text', placeholder: 'e.g. Alpha' });
+  r2.appendChild(el('div', { class: 'col flex-grow' }, [el('label', { class: 'label' }, 'Position'), posIn]));
+  r2.appendChild(el('div', { class: 'col', style: 'width:150px;' }, [el('label', { class: 'label' }, 'Rank'), rankIn]));
+  r2.appendChild(el('div', { class: 'col', style: 'width:120px;' }, [el('label', { class: 'label' }, 'Shift'), shiftIn]));
+  r2.appendChild(el('button', { class: 'btn btn-accent', onclick: () => {
+    if (!assignIn.value.trim()) return;
+    STATE.serviceRecords.push({
+      id: 'svc-' + Date.now(), assignment: assignIn.value.trim(), reportedDate: dateIn.value.trim(), reportedStardate: sdIn.value.trim(),
+      transferDate: '', transferAssignment: '', transferStardate: '',
+      timeline: [{ type: 'position', position: posIn.value.trim(), rank: rankIn.value.trim(), shift: shiftIn.value.trim() }]
+    });
+    persist(); renderAll();
+  }}, 'Add Assignment'));
+  form.appendChild(r1); form.appendChild(r2);
+  container.appendChild(form);
+
+  if (STATE.serviceRecords.length === 0) container.appendChild(el('div', { class: 'faint small' }, 'No service record entries yet.'));
+  STATE.serviceRecords.forEach((rec) => {
+    const card = el('div', { class: 'card' });
+    const head = el('div', { class: 'row justify-between items-start wrap' });
+    const left = el('div', {}, [
+      el('div', { style: 'font-weight:600;' }, rec.assignment),
+      el('div', { class: 'tiny dimmer' }, 'Reported: ' + rec.reportedDate + ' \u00b7 Stardate ' + rec.reportedStardate)
+    ]);
+    if (rec.transferDate) left.appendChild(el('div', { class: 'tiny dimmer' }, 'Transferred to ' + rec.transferAssignment + ': ' + rec.transferDate + ' \u00b7 Stardate ' + rec.transferStardate));
+    else left.appendChild(el('div', { class: 'tiny', style: 'color:var(--accent);' }, 'Current Assignment'));
+    head.appendChild(left);
+    const btnRow = el('div', { class: 'row gap-6' });
+    btnRow.appendChild(el('button', { class: 'btn btn-sm', onclick: () => {
+      const p = prompt('New Position:'); if (p === null) return;
+      const r = prompt('New Rank:') || ''; const s = prompt('Shift:') || '';
+      rec.timeline.push({ type: 'position', position: p, rank: r, shift: s }); persist(); renderAll();
+    }}, 'Add Position Change'));
+    btnRow.appendChild(el('button', { class: 'btn btn-sm', onclick: () => {
+      const sd = prompt('Stardate:') || ''; const text = prompt('Log entry text:');
+      if (text) { rec.timeline.push({ type: 'log', stardate: sd, text: text }); persist(); renderAll(); }
+    }}, 'Add Log Entry'));
+    if (!rec.transferDate) {
+      btnRow.appendChild(el('button', { class: 'btn btn-sm', onclick: () => {
+        const a = prompt('Transfer Assignment:') || ''; const d = prompt('Transfer Date:') || ''; const sd = prompt('Stardate:') || '';
+        if (d) { rec.transferAssignment = a; rec.transferDate = d; rec.transferStardate = sd; persist(); renderAll(); }
+      }}, 'Set Transfer Date'));
+    }
+    head.appendChild(btnRow);
+    card.appendChild(head);
+    const tl = el('div', { style: 'margin-top:10px; padding-top:10px; border-top:1px solid var(--panel-border);' });
+    rec.timeline.forEach((e2) => {
+      if (e2.type === 'position') tl.appendChild(el('div', { class: 'tiny dim' }, 'Position: ' + e2.position + ' \u00b7 Rank: ' + e2.rank + ' \u00b7 Shift: ' + e2.shift));
+      else tl.appendChild(el('div', { class: 'tiny', style: 'color:#8fa2ae; font-style:italic;' }, 'Log Entry \u2014 Stardate ' + e2.stardate + ': ' + e2.text));
+    });
+    card.appendChild(tl);
+    container.appendChild(card);
+  });
+}
+
+function renderMedical(container) {
+  container.appendChild(el('div', { class: 'panel-h' }, 'STARFLEET MEDICAL RECORD'));
+  const form = el('div', { class: 'row items-end gap-8 wrap', style: 'padding:16px; border:1px solid var(--panel-border); border-radius:8px; margin-bottom:16px;' });
+  const facIn = el('input', { type: 'text', placeholder: 'e.g. USS Tempest Sickbay' });
+  const attIn = el('input', { type: 'text', placeholder: 'e.g. Dr. T\u2019Vann' });
+  const ageIn = el('input', { type: 'text', style: 'width:80px;' });
+  const wtIn = el('input', { type: 'text', style: 'width:100px;' });
+  const tempIn = el('input', { type: 'text', style: 'width:110px;', placeholder: 'e.g. 98.6\u00b0F' });
+  const pulseIn = el('input', { type: 'text', style: 'width:90px;', placeholder: 'e.g. 72 bpm' });
+  form.appendChild(el('div', { class: 'col flex-grow' }, [el('label', { class: 'label' }, 'Facility'), facIn]));
+  form.appendChild(el('div', { class: 'col flex-grow' }, [el('label', { class: 'label' }, 'Attending'), attIn]));
+  form.appendChild(el('div', { class: 'col', style: 'width:80px;' }, [el('label', { class: 'label' }, 'Age'), ageIn]));
+  form.appendChild(el('div', { class: 'col', style: 'width:100px;' }, [el('label', { class: 'label' }, 'Weight'), wtIn]));
+  form.appendChild(el('div', { class: 'col', style: 'width:110px;' }, [el('label', { class: 'label' }, 'Temp'), tempIn]));
+  form.appendChild(el('div', { class: 'col', style: 'width:90px;' }, [el('label', { class: 'label' }, 'Pulse'), pulseIn]));
+  form.appendChild(el('button', { class: 'btn btn-accent', onclick: () => {
+    if (!facIn.value.trim()) return;
+    STATE.medicalRecords.push({ id: 'med-' + Date.now(), facility: facIn.value.trim(), attending: attIn.value.trim(), age: ageIn.value.trim(), weight: wtIn.value.trim(), temperature: tempIn.value.trim(), pulse: pulseIn.value.trim(), notes: [] });
+    persist(); renderAll();
+  }}, 'Add'));
+  container.appendChild(form);
+
+  if (STATE.medicalRecords.length === 0) container.appendChild(el('div', { class: 'faint small' }, 'No medical record entries yet.'));
+  STATE.medicalRecords.forEach((m) => {
+    const card = el('div', { class: 'card' });
+    const head = el('div', { class: 'row justify-between items-start' });
+    head.appendChild(el('div', {}, [
+      el('div', { style: 'font-weight:600;' }, m.facility),
+      el('div', { class: 'tiny dim' }, 'Attending: ' + m.attending + ' \u00b7 Age: ' + m.age + ' \u00b7 Weight: ' + m.weight + ' \u00b7 Temp: ' + m.temperature + ' \u00b7 Pulse: ' + m.pulse)
+    ]));
+    head.appendChild(el('button', { class: 'btn btn-sm', onclick: () => {
+      const text = prompt('New note:'); if (text) { m.notes.push(text); persist(); renderAll(); }
+    }}, 'Add Note'));
+    card.appendChild(head);
+    if (m.notes.length) {
+      const nWrap = el('div', { style: 'margin-top:10px; padding-top:10px; border-top:1px solid var(--panel-border);' });
+      m.notes.forEach((n) => nWrap.appendChild(el('div', { class: 'tiny dim' }, '\u2022 ' + n)));
+      card.appendChild(nWrap);
+    }
+    container.appendChild(card);
+  });
+}
+
+function renderAll() {
+  renderHeader();
+  renderTabs();
+  const content = document.getElementById('tab-content');
+  content.innerHTML = '';
+  if (STATE.activeTab === 'physical') renderPhysical(content);
+  else if (STATE.activeTab === 'family') renderFamily(content);
+  else if (STATE.activeTab === 'academy') renderAcademy(content);
+  else if (STATE.activeTab === 'service') renderService(content);
+  else if (STATE.activeTab === 'medical') renderMedical(content);
+}
+renderAll();
+</script>
+</body>
+</html>

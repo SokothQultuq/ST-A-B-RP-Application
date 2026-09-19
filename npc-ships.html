@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>NPC Ships — STAB Demo</title>
+<link rel="stylesheet" href="style.css">
+<script src="utils.js"></script>
+</head>
+<body>
+<div class="app-frame">
+  <div class="nav-links">
+    <a href="index.html">&larr; Demo Home</a>
+    <a href="engineering.html">Engineering</a>
+    <a href="tactical.html">Tactical</a>
+    <a href="gd-console.html">GD Console</a>
+  </div>
+  <div class="top-bar">
+    <div>
+      <div class="eyebrow">GD Tools</div>
+      <div class="title" style="font-size:20px;">NPC Ship Template Library</div>
+    </div>
+    <div class="row gap-8" id="mode-buttons"></div>
+  </div>
+  <div class="divider"></div>
+
+  <div id="library-view" class="grid" style="grid-template-columns: 300px 1fr; gap:20px;">
+    <div class="col gap-8">
+      <button class="btn" id="new-template-btn">+ New Template</button>
+      <button class="btn" id="add-faction-btn">+ Add Faction</button>
+      <div id="add-faction-form" style="display:none;" class="row gap-6">
+        <input type="text" id="new-faction-input" placeholder="Faction name...">
+        <button class="btn btn-accent btn-sm" id="confirm-faction-btn">Add</button>
+      </div>
+      <div id="faction-groups"></div>
+    </div>
+    <div class="panel" id="template-editor"></div>
+  </div>
+
+  <div id="encounter-view" style="display:none;">
+    <div class="panel" id="encounter-panel"></div>
+  </div>
+</div>
+
+<script>
+const STATE = loadState('npc-ships', {
+  view: 'library',
+  factions: ['Klingon','Romulan','Ferengi','Federation','Independent / Other'],
+  collapsed: {},
+  templates: [
+    { id:'tpl-kbop', name:'Klingon Bird-of-Prey', class:"B'rel-class", origin:'Klingon', weapons:['Disruptor Cannons','Photon Torpedoes','Cloaking Device'], lifeSigns:'12', sysShields:'75', sysWeapons:'80', sysEngines:'85', sysSensors:'70', sysTransporters:'60', sysLifeSupport:'90' },
+    { id:'tpl-ferm', name:'Ferengi Marauder', class:"D'Kora-class", origin:'Ferengi', weapons:['Disruptor Arrays','Tractor Beam'], lifeSigns:'60', sysShields:'60', sysWeapons:'55', sysEngines:'65', sysSensors:'75', sysTransporters:'80', sysLifeSupport:'85' }
+  ],
+  editingId: 'tpl-kbop',
+  instances: []
+});
+function persist() { saveState('npc-ships', STATE); }
+function blankTpl() { return { id:null, name:'', class:'', origin: STATE.factions[0], weapons:[], lifeSigns:'', sysShields:'', sysWeapons:'', sysEngines:'', sysSensors:'', sysTransporters:'', sysLifeSupport:'' }; }
+let draft = STATE.templates.find(t=>t.id===STATE.editingId) ? { ...STATE.templates.find(t=>t.id===STATE.editingId) } : blankTpl();
+
+function renderModeButtons() {
+  const wrap = document.getElementById('mode-buttons'); wrap.innerHTML = '';
+  wrap.appendChild(el('button', { class:'btn'+(STATE.view==='library'?' btn-accent':''), onclick: () => { STATE.view='library'; persist(); renderView(); } }, 'Template Library'));
+  wrap.appendChild(el('button', { class:'btn'+(STATE.view==='encounter'?' btn-accent':''), onclick: () => { STATE.view='encounter'; persist(); renderView(); } }, 'Active Encounter'+(STATE.instances.length?(' ('+STATE.instances.length+')'):'')));
+}
+
+function renderFactionGroups() {
+  const wrap = document.getElementById('faction-groups'); wrap.innerHTML = '';
+  const allFactions = Array.from(new Set([...STATE.factions, ...STATE.templates.map(t=>t.origin)]));
+  allFactions.forEach((f) => {
+    const tpls = STATE.templates.filter(t=>t.origin===f);
+    if (!tpls.length) return;
+    const collapsed = STATE.collapsed[f];
+    const head = el('div', { class:'row items-center gap-6', style:'cursor:pointer; margin:10px 0 6px;', onclick: () => { STATE.collapsed[f]=!collapsed; persist(); renderFactionGroups(); } }, [
+      el('span', { class:'tiny dimmer' }, collapsed?'\u25B8':'\u25BE'),
+      el('span', { class:'tiny dimmer' }, f+' ('+tpls.length+')')
+    ]);
+    wrap.appendChild(head);
+    if (!collapsed) tpls.forEach((tpl) => {
+      wrap.appendChild(el('div', { class:'card', style: (STATE.editingId===tpl.id?'border-color:var(--accent);':'')+' cursor:pointer;', onclick: () => { STATE.editingId=tpl.id; draft={...tpl}; persist(); renderEditor(); renderFactionGroups(); } }, [
+        el('div', { style:'font-weight:600;' }, tpl.name), el('div', { class:'tiny dim' }, tpl.class),
+        el('button', { class:'btn btn-sm btn-accent', style:'margin-top:8px;', onclick: (e) => { e.stopPropagation(); addToEncounter(tpl); } }, 'Add to Encounter')
+      ]));
+    });
+  });
+}
+
+document.getElementById('new-template-btn').onclick = () => { STATE.editingId=null; draft=blankTpl(); persist(); renderEditor(); renderFactionGroups(); };
+document.getElementById('add-faction-btn').onclick = () => { document.getElementById('add-faction-form').style.display='flex'; };
+document.getElementById('confirm-faction-btn').onclick = () => {
+  const v = document.getElementById('new-faction-input').value.trim();
+  if (v) { STATE.factions.push(v); persist(); }
+  document.getElementById('new-faction-input').value=''; document.getElementById('add-faction-form').style.display='none';
+  renderEditor(); renderFactionGroups();
+};
+
+function renderEditor() {
+  const c = document.getElementById('template-editor'); c.innerHTML = '';
+  const isEditing = STATE.templates.some(t=>t.id===STATE.editingId);
+  c.appendChild(el('div', { class:'panel-h' }, isEditing?'EDIT TEMPLATE':'NEW TEMPLATE'));
+  const r1 = el('div', { class:'row gap-8 wrap', style:'margin-bottom:12px;' });
+  const nameIn = el('input',{type:'text',value:draft.name,placeholder:"e.g. Klingon Bird-of-Prey"}); nameIn.onchange=(e)=>{draft.name=e.target.value;};
+  const classIn = el('input',{type:'text',value:draft.class,placeholder:"e.g. B'rel-class"}); classIn.onchange=(e)=>{draft.class=e.target.value;};
+  const originSel = el('select',{style:'width:200px;'});
+  Array.from(new Set([...STATE.factions, draft.origin].filter(Boolean))).forEach(f=>originSel.appendChild(el('option',{value:f},f)));
+  originSel.value = draft.origin; originSel.onchange=(e)=>{draft.origin=e.target.value;};
+  r1.appendChild(el('div',{class:'col flex-grow'},[el('label',{class:'label'},'Template Name'),nameIn]));
+  r1.appendChild(el('div',{class:'col flex-grow'},[el('label',{class:'label'},'Class'),classIn]));
+  r1.appendChild(el('div',{class:'col',style:'width:200px;'},[el('label',{class:'label'},'Origin / Faction'),originSel]));
+  c.appendChild(r1);
+
+  const lsIn = el('input',{type:'text',value:draft.lifeSigns,style:'width:140px;'}); lsIn.onchange=(e)=>{draft.lifeSigns=e.target.value;};
+  c.appendChild(el('div',{class:'col',style:'margin-bottom:12px;'},[el('label',{class:'label'},'Life Signs'),lsIn]));
+
+  c.appendChild(el('div',{class:'small dim',style:'font-weight:600; margin-bottom:6px;'},'Weapon Systems'));
+  const wList = el('div', { class:'col gap-6', style:'margin-bottom:8px;' });
+  draft.weapons.forEach((w,i)=>wList.appendChild(el('div',{class:'row justify-between items-center small',style:'padding:8px 10px; background:#0b1015; border:1px solid var(--panel-border); border-radius:6px;'},[el('span',{},w),el('button',{class:'btn btn-sm',onclick:()=>{draft.weapons.splice(i,1);renderEditor();}},'Remove')])));
+  c.appendChild(wList);
+  const wRow = el('div', { class:'row gap-8', style:'margin-bottom:14px;' });
+  const wIn = el('input',{type:'text',placeholder:'e.g. Disruptor Cannons',style:'flex-grow:1;'});
+  wRow.appendChild(wIn);
+  wRow.appendChild(el('button',{class:'btn',onclick:()=>{ if(wIn.value.trim()){draft.weapons.push(wIn.value.trim()); wIn.value=''; renderEditor();} }},'Add'));
+  c.appendChild(wRow);
+
+  c.appendChild(el('div',{class:'small dim',style:'font-weight:600; margin-bottom:6px;'},'High-Level Systems (%)'));
+  const sysGrid = el('div',{class:'grid g3',style:'margin-bottom:16px;'});
+  [['sysShields','Shields'],['sysWeapons','Weapons'],['sysEngines','Engines'],['sysSensors','Sensors'],['sysTransporters','Transporters'],['sysLifeSupport','Life Support']].forEach(([key,label])=>{
+    const inp = el('input',{type:'text',value:draft[key]}); inp.onchange=(e)=>{draft[key]=e.target.value;};
+    sysGrid.appendChild(el('div',{class:'col'},[el('label',{class:'label'},label),inp]));
+  });
+  c.appendChild(sysGrid);
+
+  const btnRow = el('div', { class:'row gap-8' });
+  btnRow.appendChild(el('button', { class:'btn btn-accent', onclick: () => {
+    if (!draft.name.trim()) return;
+    if (isEditing) { const idx = STATE.templates.findIndex(t=>t.id===STATE.editingId); STATE.templates[idx] = { ...draft, id: STATE.editingId }; }
+    else { const newTpl = { ...draft, id: 'tpl-'+Date.now() }; STATE.templates.push(newTpl); STATE.editingId = newTpl.id; draft = {...newTpl}; }
+    persist(); renderEditor(); renderFactionGroups(); renderModeButtons();
+  } }, isEditing?'Save Changes':'Save Template'));
+  if (isEditing) btnRow.appendChild(el('button', { class:'btn btn-danger', onclick: () => {
+    STATE.templates = STATE.templates.filter(t=>t.id!==STATE.editingId);
+    const next = STATE.templates[0]; STATE.editingId = next?next.id:null; draft = next?{...next}:blankTpl();
+    persist(); renderEditor(); renderFactionGroups();
+  } }, 'Delete Template'));
+  c.appendChild(btnRow);
+}
+
+function addToEncounter(tpl) {
+  STATE.instances.push({ id:'inst-'+Date.now(), designation: tpl.name, origin: tpl.origin, className: tpl.class, templateName: tpl.name,
+    lifeSigns: tpl.lifeSigns, sysShields: tpl.sysShields, sysWeapons: tpl.sysWeapons, sysEngines: tpl.sysEngines, sysSensors: tpl.sysSensors,
+    sysTransporters: tpl.sysTransporters, sysLifeSupport: tpl.sysLifeSupport, notes:'', damageLog:[] });
+  STATE.view = 'encounter'; persist(); renderView();
+}
+
+const DAMAGE_TARGETS = ['Shields','Weapons','Engines','Sensors','Transporters','Life Support','Life Signs'];
+const DAMAGE_FIELD_MAP = {Shields:'sysShields',Weapons:'sysWeapons',Engines:'sysEngines',Sensors:'sysSensors',Transporters:'sysTransporters','Life Support':'sysLifeSupport','Life Signs':'lifeSigns'};
+function statusColor(pct) { const n=parseFloat(pct); if(isNaN(n)) return '#9fb3c0'; return n>=80?'#7fb069':n>=50?'#e8a33d':'#e05d5d'; }
+
+function renderEncounter() {
+  const c = document.getElementById('encounter-panel'); c.innerHTML = '';
+  c.appendChild(el('div', { class:'panel-h' }, 'ACTIVE ENCOUNTER ROSTER'));
+  if (!STATE.instances.length) { c.appendChild(el('div',{class:'faint small'},'No ships in the active encounter yet — add one from the Template Library.')); return; }
+  STATE.instances.forEach((inst) => {
+    const card = el('div', { class:'card' });
+    const head = el('div', { class:'row justify-between items-start gap-14' });
+    const left = el('div', { style:'flex-grow:1;' });
+    const desigIn = el('input', { type:'text', value: inst.designation, style:'font-weight:600; margin-bottom:6px;' });
+    desigIn.onchange = (e) => { inst.designation = e.target.value; persist(); };
+    left.appendChild(desigIn);
+    left.appendChild(el('div', { class:'tiny dim' }, inst.origin+' \u00b7 '+inst.className+' \u00b7 Life Signs: '+inst.lifeSigns));
+    left.appendChild(el('div', { class:'tiny dimmer', style:'margin-top:4px;' }, [
+      'Shields ', el('span',{style:'color:'+statusColor(inst.sysShields)+';'},inst.sysShields+'%'), ' \u00b7 Weapons ', el('span',{style:'color:'+statusColor(inst.sysWeapons)+';'},inst.sysWeapons+'%'),
+      ' \u00b7 Engines ', el('span',{style:'color:'+statusColor(inst.sysEngines)+';'},inst.sysEngines+'%'), ' \u00b7 Sensors ', el('span',{style:'color:'+statusColor(inst.sysSensors)+';'},inst.sysSensors+'%')
+    ]));
+    if (inst.damageLog.length) {
+      const logWrap = el('div', { style:'margin-top:8px;' });
+      inst.damageLog.forEach(t=>logWrap.appendChild(el('div',{class:'tiny',style:'color:#e8a33d;'},'\u2022 '+t)));
+      left.appendChild(logWrap);
+    }
+    const notesTa = el('textarea', { rows:2, style:'margin-top:8px;' }, inst.notes);
+    notesTa.onchange = (e) => { inst.notes = e.target.value; persist(); };
+    left.appendChild(el('div', { class:'col', style:'margin-top:6px;' }, [el('label',{class:'label'},'Notes / Disposition'), notesTa]));
+    head.appendChild(left);
+    const btns = el('div', { class:'col gap-8' });
+    btns.appendChild(el('button', { class:'btn btn-sm', style:'border-color:#e8a33d; color:#e8a33d;', onclick: () => openDamageForm(inst) }, 'Log Damage'));
+    btns.appendChild(el('button', { class:'btn btn-sm', onclick: () => { STATE.instances = STATE.instances.filter(x=>x.id!==inst.id); persist(); renderEncounter(); renderModeButtons(); } }, 'Retire'));
+    head.appendChild(btns);
+    card.appendChild(head);
+    card.appendChild(el('div', { id:'dmg-form-'+inst.id }));
+    c.appendChild(card);
+  });
+}
+
+function openDamageForm(inst) {
+  const holder = document.getElementById('dmg-form-'+inst.id);
+  if (holder.childNodes.length) { holder.innerHTML=''; return; }
+  const targetSel = el('select', { style:'width:140px;' });
+  DAMAGE_TARGETS.forEach(t=>targetSel.appendChild(el('option',{value:t},t)));
+  const amountIn = el('input', { type:'text', style:'width:90px;' });
+  const form = el('div', { class:'row items-end gap-8 wrap', style:'margin-top:10px; padding-top:10px; border-top:1px solid var(--panel-border);' });
+  form.appendChild(el('div',{class:'col'},[el('label',{class:'label'},'System'),targetSel]));
+  form.appendChild(el('div',{class:'col'},[el('label',{class:'label'},'Amount'),amountIn]));
+  form.appendChild(el('button', { class:'btn btn-accent', onclick: () => {
+    const amt = parseFloat(amountIn.value); if (isNaN(amt)||amt===0) { holder.innerHTML=''; return; }
+    const field = DAMAGE_FIELD_MAP[targetSel.value];
+    const current = parseFloat(inst[field])||0;
+    const isPct = field!=='lifeSigns';
+    const next = isPct ? Math.max(0,Math.min(100,current-amt)) : Math.max(0,current-amt);
+    inst[field] = String(next);
+    inst.damageLog.push(targetSel.value+' -'+amt+(isPct?'% ':' ')+'(now '+next+(isPct?'%':'')+')');
+    holder.innerHTML=''; persist(); renderEncounter();
+  } }, 'Apply'));
+  form.appendChild(el('button', { class:'btn', onclick: () => { holder.innerHTML=''; } }, 'Cancel'));
+  holder.appendChild(form);
+}
+
+function renderView() {
+  document.getElementById('library-view').style.display = STATE.view==='library'?'grid':'none';
+  document.getElementById('encounter-view').style.display = STATE.view==='encounter'?'block':'none';
+  renderModeButtons();
+  if (STATE.view==='library') { renderEditor(); renderFactionGroups(); } else renderEncounter();
+}
+renderView();
+</script>
+</body>
+</html>

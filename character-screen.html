@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Character Screen — STAB Demo</title>
+<link rel="stylesheet" href="style.css">
+<script src="utils.js"></script>
+</head>
+<body>
+<div class="app-frame">
+  <div class="nav-links">
+    <a href="index.html">&larr; Demo Home</a>
+    <a href="character-sheet.html">Character Sheet</a>
+    <a href="engineering.html">Engineering</a>
+    <a href="tactical.html">Tactical</a>
+    <a href="gd-console.html">GD Console</a>
+  </div>
+
+  <div class="top-bar">
+    <div class="eyebrow" id="mode-label">Character Screen &middot; SHIP</div>
+  </div>
+
+  <div class="row justify-between items-start wrap" style="margin-bottom:14px;">
+    <div class="row gap-14 items-start">
+      <div style="width:96px; height:96px; border-radius:8px; border:1px solid #2a3541; background:#121a21; display:flex; align-items:center; justify-content:center; color:#4d5f6c; font-size:11px; text-transform:uppercase;">Photo</div>
+      <div class="col gap-8">
+        <input type="text" id="f-name" style="font-family:'Orbitron',sans-serif; font-size:22px; font-weight:700; width:280px;">
+        <div class="row gap-8">
+          <select id="f-rank" style="width:170px;"></select>
+          <input type="text" id="f-position" placeholder="Position" style="width:170px;">
+        </div>
+        <div class="tiny dimmer">Security Level: <span id="f-seclevel" style="color:var(--accent);"></span></div>
+      </div>
+    </div>
+    <div class="col gap-8">
+      <div class="row gap-8">
+        <button class="btn" id="btn-ship">Ship</button>
+        <button class="btn" id="btn-away">Away Team</button>
+      </div>
+      <div class="row gap-8">
+        <div class="col" style="width:190px;"><label class="label">Deck</label><select id="f-deck"></select></div>
+        <div class="col" style="width:150px;"><label class="label">Room</label><select id="f-room"></select></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="grid" style="grid-template-columns: 340px 1fr; gap:20px;">
+    <div class="col gap-14">
+      <div class="panel">
+        <div class="panel-h">HEALTH STATUS</div>
+        <select id="f-health" style="margin-bottom:8px;"></select>
+        <textarea id="f-healthdetail" rows="2" placeholder="Details (set by Medical/GD)..."></textarea>
+      </div>
+      <div class="panel">
+        <div class="row justify-between items-center" style="margin-bottom:10px;">
+          <div class="panel-h" style="margin-bottom:0;">INVENTORY</div>
+          <button class="btn btn-sm" id="btn-reset-lapse">Reset (Lapse)</button>
+        </div>
+        <div id="inv-list" class="col gap-6" style="margin-bottom:10px;"></div>
+        <div id="inv-add-row" class="row gap-8">
+          <select id="f-item" style="flex-grow:1;"></select>
+          <button class="btn btn-accent" id="btn-add-item">Add</button>
+        </div>
+        <div class="tiny faint" id="away-note" style="display:none; color:#e8a33d;">Away Team mode — limited to what was drawn before departure.</div>
+      </div>
+    </div>
+    <div class="col gap-14">
+      <div class="row gap-8" id="tool-buttons"></div>
+      <div class="panel" style="flex-grow:1; min-height:260px;" id="tool-panel"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const STATE = loadState('character-screen', {
+  name: '', rank: 'Lieutenant', position: '',
+  mode: 'ship', deck: null, room: null,
+  healthStatus: 'Nominal', healthDetail: '',
+  inventory: [], itemDraft: null,
+  activeTool: null, commTarget: null, commSent: false, intercomMessage: '', intercomSent: false
+});
+function persist() { saveState('character-screen', STATE); }
+
+const RANKS = [
+  { label: 'Captain', level: 10 }, { label: 'Commander', level: 8 }, { label: 'Lieutenant Commander', level: 7 },
+  { label: 'Lieutenant', level: 6 }, { label: 'Lieutenant J.G.', level: 5 }, { label: 'Ensign', level: 4 },
+  { label: 'Non-Commissioned Crew', level: 3 }, { label: 'Civilian Personnel', level: 2 }
+];
+const DECKS = ['Deck 1 — Bridge', 'Deck 11 — Holodecks', 'Deck 15 — Primary Armory (Saucer)', 'Deck 16 — Secondary Armory (Stardrive)', 'Deck 24', 'Deck 33', 'Deck 42'];
+const ROOMS = ['Bridge', 'Quarters', 'Sickbay', 'Engineering', 'Cargo Bay', 'Armory', 'Holodeck', 'Mess Hall'];
+const HEALTH_OPTS = ['Nominal', 'Minor Injury', 'Under Medical Care', 'Critical'];
+const ITEM_OPTS = ['Tricorder', 'Communicator', 'Phaser (Type I)', 'Medical Kit', 'Engineering Kit'];
+const COMM_TARGETS = ['CO', 'XO', 'ENG', 'MED', 'SCI', 'SEC', 'OPS', 'NAV', 'TAC'];
+
+function fillSelect(select, options) {
+  select.innerHTML = '';
+  options.forEach((o) => select.appendChild(el('option', { value: o }, o)));
+}
+
+function render() {
+  document.getElementById('f-name').value = STATE.name || '[Character Name]';
+  fillSelect(document.getElementById('f-rank'), RANKS.map((r) => r.label));
+  document.getElementById('f-rank').value = STATE.rank;
+  document.getElementById('f-position').value = STATE.position;
+  const match = RANKS.find((r) => r.label === STATE.rank) || RANKS[3];
+  document.getElementById('f-seclevel').textContent = match.level;
+
+  fillSelect(document.getElementById('f-deck'), DECKS);
+  document.getElementById('f-deck').value = STATE.deck || DECKS[0];
+  fillSelect(document.getElementById('f-room'), ROOMS);
+  document.getElementById('f-room').value = STATE.room || ROOMS[0];
+
+  document.getElementById('mode-label').textContent = 'Character Screen \u00b7 ' + (STATE.mode === 'away' ? 'AWAY TEAM' : 'SHIP');
+  document.getElementById('btn-ship').className = 'btn' + (STATE.mode === 'ship' ? ' btn-accent' : '');
+  document.getElementById('btn-away').className = 'btn' + (STATE.mode === 'away' ? ' btn-accent' : '');
+  document.getElementById('inv-add-row').style.display = STATE.mode === 'ship' ? 'flex' : 'none';
+  document.getElementById('away-note').style.display = STATE.mode === 'away' ? 'block' : 'none';
+
+  fillSelect(document.getElementById('f-health'), HEALTH_OPTS);
+  document.getElementById('f-health').value = STATE.healthStatus;
+  document.getElementById('f-healthdetail').value = STATE.healthDetail;
+
+  fillSelect(document.getElementById('f-item'), ITEM_OPTS);
+
+  const invList = document.getElementById('inv-list');
+  invList.innerHTML = '';
+  if (STATE.inventory.length === 0) invList.appendChild(el('div', { class: 'tiny faint' }, 'No equipment carried.'));
+  STATE.inventory.forEach((item, i) => {
+    const row = el('div', { class: 'row justify-between items-center small', style: 'padding:8px 10px; background:#0b1015; border:1px solid var(--panel-border); border-radius:6px;' });
+    row.appendChild(el('span', {}, item));
+    row.appendChild(el('button', { class: 'btn btn-sm', onclick: () => { STATE.inventory.splice(i, 1); persist(); render(); } }, 'Remove'));
+    invList.appendChild(row);
+  });
+
+  renderTools();
+}
+
+document.getElementById('f-name').addEventListener('change', (e) => { STATE.name = e.target.value; persist(); });
+document.getElementById('f-rank').addEventListener('change', (e) => { STATE.rank = e.target.value; persist(); render(); });
+document.getElementById('f-position').addEventListener('change', (e) => { STATE.position = e.target.value; persist(); });
+document.getElementById('f-deck').addEventListener('change', (e) => { STATE.deck = e.target.value; persist(); });
+document.getElementById('f-room').addEventListener('change', (e) => { STATE.room = e.target.value; persist(); });
+document.getElementById('btn-ship').addEventListener('click', () => { STATE.mode = 'ship'; persist(); render(); });
+document.getElementById('btn-away').addEventListener('click', () => { STATE.mode = 'away'; persist(); render(); });
+document.getElementById('f-health').addEventListener('change', (e) => { STATE.healthStatus = e.target.value; persist(); });
+document.getElementById('f-healthdetail').addEventListener('change', (e) => { STATE.healthDetail = e.target.value; persist(); });
+document.getElementById('btn-add-item').addEventListener('click', () => {
+  const v = document.getElementById('f-item').value || ITEM_OPTS[0];
+  STATE.inventory.push(v); persist(); render();
+});
+document.getElementById('btn-reset-lapse').addEventListener('click', () => {
+  STATE.inventory = []; STATE.activeTool = null; persist(); render();
+});
+
+function renderTools() {
+  const hasTricorder = STATE.inventory.includes('Tricorder');
+  const hasComm = STATE.inventory.includes('Communicator');
+  const btnWrap = document.getElementById('tool-buttons');
+  btnWrap.innerHTML = '';
+  if (hasTricorder) btnWrap.appendChild(el('button', { class: 'btn' + (STATE.activeTool === 'tricorder' ? ' btn-accent' : ''), onclick: () => { STATE.activeTool = 'tricorder'; persist(); render(); } }, 'Tricorder'));
+  if (hasComm) btnWrap.appendChild(el('button', { class: 'btn' + (STATE.activeTool === 'communicator' ? ' btn-accent' : ''), onclick: () => { STATE.activeTool = 'communicator'; STATE.commSent = false; persist(); render(); } }, 'Communicator'));
+  btnWrap.appendChild(el('button', { class: 'btn' + (STATE.activeTool === 'intercom' ? ' btn-accent' : ''), onclick: () => { STATE.activeTool = 'intercom'; STATE.intercomSent = false; persist(); render(); } }, 'Intercom'));
+
+  const panel = document.getElementById('tool-panel');
+  panel.innerHTML = '';
+  if (!STATE.activeTool) { panel.appendChild(el('div', { class: 'faint small' }, 'Select a tool above to use it.')); return; }
+  if (STATE.activeTool === 'tricorder') {
+    panel.appendChild(el('div', { class: 'panel-h' }, 'TRICORDER READOUT'));
+    panel.appendChild(el('div', { class: 'tiny dimmer', style: 'margin-bottom:12px;' }, 'Location: ' + (STATE.deck || DECKS[0]) + ' \u00b7 ' + (STATE.room || ROOMS[0])));
+    ['Atmospheric composition: [nominal]', 'Lifeform readings: [none detected in range]', 'Radiation levels: [background]'].forEach((t) => panel.appendChild(el('div', { class: 'small dim' }, t)));
+  } else if (STATE.activeTool === 'communicator') {
+    panel.appendChild(el('div', { class: 'panel-h' }, 'COMMUNICATOR — POINT TO POINT'));
+    const sel = el('select', { style: 'margin-bottom:8px;' });
+    fillSelect(sel, COMM_TARGETS); sel.value = STATE.commTarget || COMM_TARGETS[0];
+    sel.addEventListener('change', (e) => { STATE.commTarget = e.target.value; persist(); });
+    panel.appendChild(el('div', { class: 'col', style: 'max-width:320px;' }, [
+      el('label', { class: 'label' }, 'Hailing'), sel,
+      el('button', { class: 'btn btn-accent', style: 'margin-top:8px; align-self:flex-start;', onclick: () => { STATE.commSent = true; persist(); render(); } }, 'Hail')
+    ]));
+    if (STATE.commSent) panel.appendChild(el('div', { class: 'tiny', style: 'color:var(--accent); margin-top:8px;' }, 'Hail sent to ' + (STATE.commTarget || COMM_TARGETS[0]) + '.'));
+  } else if (STATE.activeTool === 'intercom') {
+    panel.appendChild(el('div', { class: 'panel-h' }, "SHIP'S INTERCOM — ALL HANDS"));
+    const ta = el('textarea', { rows: 3, placeholder: 'Message to all hands...', style: 'max-width:420px;' }, STATE.intercomMessage || '');
+    ta.addEventListener('change', (e) => { STATE.intercomMessage = e.target.value; persist(); });
+    panel.appendChild(ta);
+    panel.appendChild(el('button', { class: 'btn btn-accent', style: 'margin-top:8px;', onclick: () => { STATE.intercomSent = true; persist(); render(); } }, 'Broadcast'));
+    if (STATE.intercomSent) panel.appendChild(el('div', { class: 'tiny', style: 'color:var(--accent); margin-top:8px;' }, 'Broadcast sent shipwide.'));
+  }
+}
+
+render();
+</script>
+</body>
+</html>

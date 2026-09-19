@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Engineering — STAB Demo</title>
+<link rel="stylesheet" href="style.css">
+<script src="utils.js"></script>
+</head>
+<body>
+<div class="app-frame">
+  <div class="nav-links">
+    <a href="index.html">&larr; Demo Home</a>
+    <a href="character-sheet.html">Character Sheet</a>
+    <a href="character-screen.html">Character Screen</a>
+    <a href="tactical.html">Tactical</a>
+    <a href="gd-console.html">GD Console</a>
+  </div>
+
+  <div class="top-bar">
+    <div>
+      <div class="eyebrow">Engineering Console</div>
+      <div class="title" style="font-size:22px;">USS Tempest &middot; Systems Overview</div>
+    </div>
+    <div class="row gap-8 items-center">
+      <div class="row gap-8" id="alert-buttons"></div>
+      <div style="width:1px; height:24px; background:var(--panel-border);"></div>
+      <div class="row gap-8" id="mode-buttons"></div>
+    </div>
+  </div>
+  <div class="divider"></div>
+
+  <div id="status-view">
+    <div class="grid g4" id="system-tiles" style="margin-bottom:16px;"></div>
+    <div class="panel" id="system-detail" style="min-height:300px;"></div>
+  </div>
+
+  <div id="damage-view" style="display:none;">
+    <div class="grid" style="grid-template-columns: 1fr 300px; gap:16px;">
+      <div id="incident-list"></div>
+      <div class="panel"><div class="panel-h">ENGINEERING POOL</div><div id="engineer-pool" class="col gap-8"></div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const BASE_ACCENT = '#4a9eff';
+const STATE = loadState('engineering', {
+  alertLevel: 'normal', viewMode: 'status', selectedSystem: 'shields',
+  shieldAllocation: { forward: 100, starboard: 100, port: 100, dorsal: 100, aft: 100, ventral: 100 },
+  shieldGenerators: {
+    forward: [{ role: 'active', temp: 62, power: 100 }, { role: 'active', temp: 64, power: 100 }, { role: 'standby', temp: 22, power: 0 }],
+    starboard: [{ role: 'active', temp: 60, power: 100 }, { role: 'active', temp: 61, power: 100 }, { role: 'standby', temp: 21, power: 0 }],
+    port: [{ role: 'active', temp: 59, power: 100 }, { role: 'active', temp: 63, power: 100 }, { role: 'standby', temp: 20, power: 0 }],
+    dorsal: [{ role: 'active', temp: 61, power: 100 }, { role: 'active', temp: 60, power: 100 }, { role: 'standby', temp: 23, power: 0 }],
+    aft: [{ role: 'active', temp: 58, power: 100 }, { role: 'offline', temp: 310, power: 0 }, { role: 'standby', temp: 24, power: 0 }],
+    ventral: [{ role: 'active', temp: 59, power: 100 }, { role: 'active', temp: 145, power: 40 }, { role: 'standby', temp: 22, power: 0 }]
+  },
+  reactors: (() => {
+    const groups = [['stardrive','Main Impulse Drive (Stardrive)'],['saucer-port','Secondary Impulse Drive — Port (Saucer)'],['saucer-stbd','Secondary Impulse Drive — Starboard (Saucer)']];
+    const list = [];
+    groups.forEach(([key,label]) => { for (let i=1;i<=8;i++) list.push({ id:key+'-r'+i, group:key, groupLabel:label, label:'Reactor '+i, status: i>6?'standby':'active', temp: i>6?180:870+((i*7)%40), load: i>6?null:62+((i*5)%28) }); });
+    return list;
+  })(),
+  lsUnits: { gravity: mkUnits(), sif: mkUnits(), idf: mkUnits() },
+  selectedLS: null,
+  rcs: (() => { const arr=[]; for(let i=1;i<=20;i++) arr.push({ id:i, status:'online', thrust:100, condition:100, safety:false }); return arr; })(),
+  engineerPool: {
+    generalEngineers: { label: 'General Engineers', total: 24, allocated: 0 },
+    warpTheory: { label: 'Warp Theory Specialists', total: 12, allocated: 0 },
+    architectural: { label: 'Architectural Engineers', total: 6, allocated: 0 },
+    mechanical: { label: 'Mechanical Engineers', total: 10, allocated: 0 },
+    impulse: { label: 'Impulse Specialists', total: 18, allocated: 0 },
+    sensorCal: { label: 'Sensor Calibration Specialists', total: 11, allocated: 0 },
+    flightSystems: { label: 'Flight Systems Specialists', total: 12, allocated: 0 },
+    atmospheric: { label: 'Atmospheric Technology Specialists', total: 6, allocated: 0 },
+    maintenance: { label: 'Maintenance', total: 82, allocated: 0 },
+    transporterTech: { label: 'Transporter Technicians', total: 24, allocated: 0 },
+    computerSystems: { label: 'Computer Systems Specialists', total: 12, allocated: 0 },
+    lifeSupportSpec: { label: 'Life Support Subsystems Specialists', total: 24, allocated: 0 }
+  },
+  incidents: [
+    { id: 'inc-1', title: 'Aft Shield Generator', description: 'Drain detected — output down to 45%.', baseHours: 6, dispatched: false, repaired: false, assignedTeams: [], repairType: null },
+    { id: 'inc-2', title: 'Ventral Shield Emitter', description: 'Drain detected — output down to 60%.', baseHours: 4, dispatched: false, repaired: false, assignedTeams: [], repairType: null },
+    { id: 'inc-3', title: 'Port Nacelle — Warp Coil Misalignment', description: 'Nacelle sheared during last engagement.', baseHours: 45, dispatched: false, repaired: false, assignedTeams: [], repairType: null }
+  ]
+});
+function mkUnits() { const a=[]; for(let i=1;i<=16;i++) a.push({ status:'online', power:100 }); return a; }
+function persist() { saveState('engineering', STATE); }
+function statusColor(pct) { return pct>=80?'#7fb069':pct>=50?'#e8a33d':'#e05d5d'; }
+
+function applyTheme() { applyAlertTheme(STATE.alertLevel, BASE_ACCENT); }
+
+function renderAlertButtons() {
+  const wrap = document.getElementById('alert-buttons'); wrap.innerHTML = '';
+  ['normal','yellow','red'].forEach((lvl) => {
+    const labels = { normal: 'Normal', yellow: 'Yellow Alert', red: 'Red Alert' };
+    const btn = el('button', { class: 'btn' + (STATE.alertLevel===lvl?' btn-accent':''), onclick: () => { STATE.alertLevel = lvl; persist(); applyTheme(); renderAlertButtons(); } }, labels[lvl]);
+    wrap.appendChild(btn);
+  });
+}
+
+function renderModeButtons() {
+  const wrap = document.getElementById('mode-buttons'); wrap.innerHTML = '';
+  wrap.appendChild(el('button', { class: 'btn' + (STATE.viewMode==='status'?' btn-accent':''), onclick: () => { STATE.viewMode='status'; persist(); renderView(); } }, 'System Status'));
+  const openCount = STATE.incidents.filter(i=>!i.dispatched&&!i.repaired).length;
+  wrap.appendChild(el('button', { class: 'btn' + (STATE.viewMode==='damage'?' btn-accent':''), onclick: () => { STATE.viewMode='damage'; persist(); renderView(); } }, 'Damage Control' + (openCount?(' ('+openCount+')'):'')));
+}
+
+const SYSTEMS = [
+  { id: 'shields', name: 'Shields' }, { id: 'warp', name: 'Warp Drive' }, { id: 'impulse', name: 'Impulse Drive' },
+  { id: 'slipstream', name: 'Slipstream' }, { id: 'lifesupport', name: 'Life Support' }, { id: 'power', name: 'Emergency Power' },
+  { id: 'structural', name: 'Structural Integrity' }, { id: 'rcs', name: 'RCS Thrusters' }
+];
+
+function shieldZonePct(key) {
+  const gens = STATE.shieldGenerators[key];
+  const cap = Math.round(gens.filter(g=>g.role==='active').reduce((a,g)=>a+(g.power/100)*50,0));
+  return Math.min(STATE.shieldAllocation[key], cap);
+}
+function shieldOverall() { const keys=Object.keys(STATE.shieldAllocation); return Math.round(keys.reduce((a,k)=>a+shieldZonePct(k),0)/keys.length); }
+
+function renderSystemTiles() {
+  const wrap = document.getElementById('system-tiles'); wrap.innerHTML = '';
+  SYSTEMS.forEach((s) => {
+    let val;
+    if (s.id === 'shields') val = shieldOverall() + '%';
+    else if (s.id === 'warp') val = '96%';
+    else if (s.id === 'impulse') val = '100%';
+    else if (s.id === 'slipstream') val = 'Recharging';
+    else if (s.id === 'lifesupport') val = '100%';
+    else if (s.id === 'power') val = 'Standby';
+    else if (s.id === 'structural') val = '97%';
+    else if (s.id === 'rcs') val = STATE.rcs.filter(t=>t.status==='online').length + '/20';
+    const numeric = parseInt(val, 10);
+    const color = isNaN(numeric) ? '#9fb3c0' : statusColor(numeric);
+    const tile = el('div', { class: 'tile' + (STATE.selectedSystem===s.id?' selected':''), onclick: () => { STATE.selectedSystem = s.id; persist(); renderDetail(); renderSystemTiles(); } }, [
+      el('div', { class: 'tiny dim' }, s.name),
+      el('div', { class: 'tile-value', style: 'color:' + color + ';' }, val)
+    ]);
+    wrap.appendChild(tile);
+  });
+}
+
+function renderDetail() {
+  const c = document.getElementById('system-detail'); c.innerHTML = '';
+  const s = STATE.selectedSystem;
+  if (s === 'shields') renderShields(c);
+  else if (s === 'warp') renderWarp(c);
+  else if (s === 'impulse') renderImpulse(c);
+  else if (s === 'slipstream') { c.appendChild(el('div',{class:'panel-h'},'QUANTUM SLIPSTREAM DRIVE')); c.appendChild(el('div',{class:'small dim'},'Status: Recharging \u00b7 Charge: 75% \u00b7 Est. 6 hrs remaining of 24 hr cycle')); c.appendChild(el('div',{class:'tiny dimmer', style:'margin-top:6px;'},'Max distance per jump: 40 light years')); }
+  else if (s === 'lifesupport') renderLifeSupport(c);
+  else if (s === 'power') { c.appendChild(el('div',{class:'panel-h'},'EMERGENCY POWER')); c.appendChild(el('div',{class:'small dim'},'Stardrive: 6 Honeywell LV-426 Plasma Generators — Standby, ready')); c.appendChild(el('div',{class:'small dim'},'Saucer: 2 Honeywell LV-223 Plasma Generators — Standby, ready')); }
+  else if (s === 'structural') { c.appendChild(el('div',{class:'panel-h'},'STRUCTURAL INTEGRITY')); c.appendChild(el('div',{class:'small dim'},'Hull condition: 97% \u00b7 Duranium & Tritanium alloy, double hull, ablative armor')); }
+  else if (s === 'rcs') renderRCS(c);
+}
+
+function renderShields(c) {
+  c.appendChild(el('div', { class: 'row justify-between items-center' }, [
+    el('div', { class: 'panel-h', style: 'margin-bottom:0;' }, 'SHIELDS — ZONE DETAIL'),
+    el('div', { class: 'row gap-8 items-center' }, [
+      el('div', { class: 'tiny dim' }, 'Power Reserve: ' + (600 - Object.values(STATE.shieldAllocation).reduce((a,b)=>a+b,0)) + '%'),
+      el('button', { class: 'btn btn-accent btn-sm', onclick: () => { STATE.shieldAllocation = { forward:100,starboard:100,port:100,dorsal:100,aft:100,ventral:100 }; persist(); renderDetail(); renderSystemTiles(); } }, 'Balance Shields')
+    ])
+  ]));
+  const grid = el('div', { class: 'grid g2', style: 'margin-top:12px;' });
+  Object.keys(STATE.shieldAllocation).forEach((key) => {
+    const label = key.charAt(0).toUpperCase() + key.slice(1);
+    const pct = shieldZonePct(key);
+    const gens = STATE.shieldGenerators[key];
+    const cap = Math.round(gens.filter(g=>g.role==='active').reduce((a,g)=>a+(g.power/100)*50,0));
+    const box = el('div', { style: 'border:1px solid var(--panel-border); border-radius:8px; padding:14px; background:#0b1015;' });
+    box.appendChild(el('div', { class: 'row justify-between items-start' }, [
+      el('div', {}, [
+        el('div', { class: 'tiny dim' }, label),
+        el('div', { class: 'title', style: 'font-size:22px; color:'+statusColor(pct)+';' }, pct + '%'),
+        el('div', { class: 'tiny dimmer' }, 'Allocated ' + STATE.shieldAllocation[key] + '% \u00b7 Cap ' + cap + '%')
+      ]),
+      el('div', { class: 'col gap-6' }, [
+        el('button', { class: 'btn btn-sm', onclick: () => { const rsv = 600 - Object.values(STATE.shieldAllocation).reduce((a,b)=>a+b,0); if (rsv<=0) return; STATE.shieldAllocation[key] = Math.min(150, STATE.shieldAllocation[key]+10); persist(); renderDetail(); renderSystemTiles(); } }, '+ Power'),
+        el('button', { class: 'btn btn-sm', onclick: () => { if (STATE.shieldAllocation[key]<=0) return; STATE.shieldAllocation[key] = Math.max(0, STATE.shieldAllocation[key]-10); persist(); renderDetail(); renderSystemTiles(); } }, '\u2212 Power')
+      ])
+    ]));
+    if (pct < 70) box.appendChild(el('div', { class: 'tiny', style: 'color:#e05d5d; margin-top:4px;' }, 'Drain detected — damage-related'));
+    const genWrap = el('div', { style: 'margin-top:10px; padding-top:10px; border-top:1px solid var(--panel-border);' });
+    gens.forEach((g, i) => {
+      const gc = g.role==='offline'?'#e05d5d':g.role==='standby'?'#6b7d89':(g.power<70?'#e8a33d':'#7fb069');
+      const gl = g.role==='standby'?'Standby':'Gen '+String.fromCharCode(65+i);
+      const gd = g.role==='offline'?'Offline':g.role==='standby'?'Standby':g.power+'%';
+      genWrap.appendChild(el('div', { class: 'tiny', style: 'color:'+gc+';' }, gl + ': ' + g.temp + '\u00b0C \u00b7 ' + gd));
+    });
+    box.appendChild(genWrap);
+    const weak = gens.some(g=>g.role==='offline'||(g.role==='active'&&g.power<70));
+    const standby = gens.some(g=>g.role==='standby');
+    if (weak && standby) {
+      box.appendChild(el('button', { class: 'btn btn-sm', style:'width:100%; margin-top:8px;', onclick: () => {
+        const wi = gens.findIndex(g=>g.role==='offline'||(g.role==='active'&&g.power<70));
+        const si = gens.findIndex(g=>g.role==='standby');
+        if (wi<0||si<0) return;
+        gens[si] = { role:'active', temp:60, power:100 };
+        gens[wi] = { role:'standby', temp:25, power:0 };
+        persist(); renderDetail(); renderSystemTiles();
+      } }, 'Bring Standby Online'));
+    }
+    grid.appendChild(box);
+  });
+  c.appendChild(grid);
+  c.appendChild(el('div', { class: 'tiny dimmer', style: 'margin-top:12px;' }, 'MLSS: 18 generators (12 active, 6 standby — 3 per zone) \u00b7 3-layer design (Multi-phasic / Meta-phasic / Graviton Flux)'));
+}
+
+function renderWarp(c) {
+  c.appendChild(el('div', { class: 'panel-h' }, 'WARP DRIVE — COMPONENT STATUS'));
+  const comps = [['Port Nacelle',94],['Starboard Nacelle',96],['Antimatter Containment Pod',98],['Matter Injector',94],['Anti-Matter Injector',92],['Deuterium Fuel Reserve',82],['Antimatter Fuel Reserve',91],['Dilithium Crystal Status',95],['Coolant System Status',97],['Coolant Fluid Level',88],['M/ARA Reaction Chamber Containment',99],['Magnetic Constriction Status',93]];
+  const grid = el('div', { class: 'grid g5' });
+  comps.forEach(([name,pct]) => grid.appendChild(el('div', { style: 'border:1px solid var(--panel-border); border-radius:8px; padding:12px; background:#0b1015;' }, [
+    el('div', { class: 'tiny dim' }, name), el('div', { class: 'title', style: 'font-size:18px; color:'+statusColor(pct)+'; margin-top:6px;' }, pct+'%')
+  ])));
+  c.appendChild(grid);
+  c.appendChild(el('div', { class: 'tiny dimmer', style:'margin-top:12px;' }, 'Max Sustainable Warp 9.95 \u00b7 Standard Cruise Warp 8'));
+}
+
+function renderImpulse(c) {
+  c.appendChild(el('div', { class: 'panel-h' }, 'IMPULSE DRIVE — FUSION REACTOR MANAGEMENT'));
+  const groups = [['stardrive','Main Impulse Drive (Stardrive)'],['saucer-port','Secondary Impulse Drive — Port (Saucer)'],['saucer-stbd','Secondary Impulse Drive — Starboard (Saucer)']];
+  groups.forEach(([key,label]) => {
+    const reactors = STATE.reactors.filter(r=>r.group===key);
+    const active = reactors.filter(r=>r.status==='active').length, standby = reactors.filter(r=>r.status==='standby').length, cooldown = reactors.filter(r=>r.status==='cooldown').length;
+    c.appendChild(el('div', { class: 'tiny dim', style:'margin:10px 0 8px; font-weight:600;' }, label + ' \u00b7 ' + active + ' Active / ' + standby + ' Standby / ' + cooldown + ' Cooling'));
+    const grid = el('div', { class: 'grid g4', style:'margin-bottom:14px;' });
+    reactors.forEach((r) => {
+      const meta = { active:['#7fb069','Active'], standby:['#5ec8d8','Standby'], cooldown:['#e8a33d','Cooling'] }[r.status];
+      const box = el('div', { style:'border:1px solid '+(r.status==='cooldown'?'#e8a33d':'var(--panel-border)')+'; border-radius:8px; padding:10px; background:#0b1015;' });
+      box.appendChild(el('div', { class:'row justify-between items-center' }, [el('div',{class:'tiny', style:'font-weight:600;'},r.label), el('div',{class:'tiny', style:'color:'+meta[0]+'; text-transform:uppercase;'},meta[1])]));
+      box.appendChild(el('div', { class:'tiny dimmer', style:'margin-top:6px;' }, 'Temp: ' + r.temp + '\u00b0C'));
+      box.appendChild(el('div', { class:'tiny dimmer' }, r.status==='active' ? ('Load: '+r.load+'%') : r.status==='cooldown' ? 'Cooling — est. 3 hrs' : 'Ready'));
+      if (r.status==='active' && reactors.some(x=>x.status==='standby')) {
+        box.appendChild(el('button', { class:'btn btn-sm', style:'width:100%; margin-top:6px;', onclick: () => {
+          const standbyR = reactors.find(x=>x.status==='standby');
+          if (!standbyR) return;
+          r.status='cooldown'; standbyR.status='active'; standbyR.load=65; standbyR.temp=860;
+          persist(); renderImpulseRefresh();
+        } }, 'Swap Out'));
+      }
+      if (r.status==='cooldown') {
+        box.appendChild(el('button', { class:'btn btn-sm', style:'width:100%; margin-top:6px;', onclick: () => { r.status='standby'; r.temp=180; r.load=null; persist(); renderImpulseRefresh(); } }, 'Cooldown Complete'));
+      }
+      grid.appendChild(box);
+    });
+    c.appendChild(grid);
+  });
+}
+function renderImpulseRefresh() { renderDetail(); }
+
+function renderLifeSupport(c) {
+  c.appendChild(el('div', { class: 'panel-h' }, 'LIFE SUPPORT — DETAIL'));
+  c.appendChild(el('div', { class: 'tiny dimmer', style:'margin-bottom:12px;' }, 'Primary Life Support Subsystem: Bryant Life Support System T-200 Series'));
+  const subs = [['gravity','Gravity Generation','16x Bosch Superconductors (Version 3.5)','Backup: Tublof Type VIII Auxiliary Gravity Generators'],
+    ['sif','Structural Integrity Field','16x S.I.F. Generators','Backup: Cochran Systems F-1A Auxiliary S.I.F. Generators'],
+    ['idf','Inertial Dampening Field','16x I.D.F. Generators','Backup: Tublof Auxiliary I.D.F. Generators']];
+  const grid = el('div', { class: 'grid g3', style:'margin-bottom:16px;' });
+  subs.forEach(([key,label,desc,backup]) => {
+    const units = STATE.lsUnits[key];
+    const online = units.filter(u=>u.status==='online').length;
+    const avg = Math.round(units.reduce((a,u)=>a+(u.status==='online'?u.power:0),0)/units.length);
+    const sc = online===units.length?'#7fb069':online===0?'#e05d5d':'#e8a33d';
+    const box = el('div', { style:'cursor:pointer; border:1px solid '+(STATE.selectedLS===key?'var(--accent)':'var(--panel-border)')+'; border-radius:8px; padding:12px; background:#0b1015;', onclick: () => { STATE.selectedLS = key; persist(); renderDetail(); } }, [
+      el('div', { class:'tiny dim', style:'font-weight:600;' }, label),
+      el('div', { class:'tiny dimmer', style:'margin-top:6px;' }, desc),
+      el('div', { class:'tiny dimmer' }, backup),
+      el('div', { class:'tiny', style:'color:'+sc+'; margin-top:6px;' }, online+'/'+units.length+' units online \u00b7 avg '+avg+'%')
+    ]);
+    grid.appendChild(box);
+  });
+  c.appendChild(grid);
+  c.appendChild(el('div', { class:'tiny dimmer', style:'margin-bottom:14px;' }, 'Generators are distributed across deck zones. Click a subsystem above to manage its units.'));
+
+  if (STATE.selectedLS) {
+    const units = STATE.lsUnits[STATE.selectedLS];
+    const labelMap = { gravity:'Gravity Generation', sif:'Structural Integrity Field', idf:'Inertial Dampening Field' };
+    c.appendChild(el('div', { style:'border-top:1px solid var(--panel-border); padding-top:14px;' }, [
+      el('div', { class:'small', style:'font-weight:600; color:var(--accent); margin-bottom:10px;' }, labelMap[STATE.selectedLS] + ' — UNITS')
+    ]));
+    const ugrid = el('div', { class: 'grid', style: 'grid-template-columns: repeat(8, minmax(0,1fr)); gap:8px;' });
+    units.forEach((u, i) => {
+      const online = u.status==='online';
+      const box = el('div', { style: 'border:1px solid var(--panel-border); border-radius:6px; padding:8px; background:#0b1015;' });
+      box.appendChild(el('div', { class:'row justify-between items-center' }, [el('div',{class:'tiny', style:'font-weight:600;'},'Unit '+(i+1)), el('div',{class:'tiny', style:'color:'+(online?'#7fb069':'#e05d5d')+';'}, online?'Online':'Offline')]));
+      box.appendChild(el('div', { class:'tiny dimmer', style:'margin-top:4px;' }, online?('Power: '+u.power+'%'):'Powered down'));
+      const btnRow = el('div', { class:'row gap-6', style:'margin-top:6px;' });
+      btnRow.appendChild(el('button', { class:'btn btn-sm', style:'flex:1;', onclick: () => { if(!online) return; u.power=Math.max(0,u.power-10); persist(); renderDetail(); } }, '\u2212'));
+      btnRow.appendChild(el('button', { class:'btn btn-sm', style:'flex:1;', onclick: () => { if(!online) return; u.power=Math.min(100,u.power+10); persist(); renderDetail(); } }, '+'));
+      box.appendChild(btnRow);
+      box.appendChild(el('button', { class:'btn btn-sm', style:'width:100%; margin-top:4px;', onclick: () => { if(online){u.status='offline';u.power=0;} else {u.status='online';u.power=u.power>0?u.power:100;} persist(); renderDetail(); } }, online?'Power Off':'Power On'));
+      box.appendChild(el('button', { class:'btn btn-sm', style:'width:100%; margin-top:4px;', onclick: () => { u.status='online'; u.power=100; persist(); renderDetail(); } }, 'Reset'));
+      ugrid.appendChild(box);
+    });
+    c.appendChild(ugrid);
+  }
+}
+
+function renderRCS(c) {
+  const online = STATE.rcs.filter(t=>t.status==='online').length;
+  c.appendChild(el('div', { class: 'panel-h' }, 'REACTION CONTROL SYSTEM — THRUSTER PACKS'));
+  c.appendChild(el('div', { class:'tiny dimmer', style:'margin-bottom:12px;' }, '20x General Electric RCS Gas-Fusion Quad Thruster Packs (Version IV) \u00b7 ' + online + '/20 online'));
+  const grid = el('div', { class: 'grid g5' });
+  STATE.rcs.forEach((t) => {
+    const isOn = t.status==='online', isE = t.status==='emergency';
+    const box = el('div', { style: 'border:1px solid '+(isE?'#7a3030':'var(--panel-border)')+'; border-radius:6px; padding:8px; background:#0b1015;' });
+    box.appendChild(el('div', { class:'row justify-between items-center' }, [el('div',{class:'tiny',style:'font-weight:600;'},'Pack '+t.id), el('div',{class:'tiny', style:'color:'+(isOn?'#7fb069':isE?'#e05d5d':'#6b7d89')+'; text-transform:uppercase; font-weight:700;'}, isOn?'Online':isE?'E-Stop':'Offline')]));
+    box.appendChild(el('div', { class:'tiny', style:'color:'+(t.thrust>100?'#e8a33d':'#c3d0d8')+'; margin-top:4px;' }, 'Thrust: ' + (isOn?t.thrust:0) + '%'));
+    box.appendChild(el('div', { class:'tiny', style:'color:'+(t.condition>=70?'#7fb069':t.condition>=30?'#e8a33d':'#e05d5d')+';' }, 'Condition: '+t.condition+'%'));
+    const dimStyle = isOn ? '' : 'opacity:0.4; cursor:not-allowed;';
+    const thrustRow = el('div', { class:'row gap-6', style:'margin-top:6px;' });
+    thrustRow.appendChild(el('button', { class:'btn btn-sm', style:'flex:1; '+dimStyle, onclick: () => { if(!isOn) return; t.thrust=Math.max(0,t.thrust-10); persist(); renderDetail(); renderSystemTiles(); } }, '\u2212'));
+    thrustRow.appendChild(el('button', { class:'btn btn-sm', style:'flex:1; '+dimStyle, onclick: () => {
+      if(!isOn) return;
+      const cap = t.safety?150:100;
+      const next = Math.min(cap, t.thrust+10);
+      if (next>100) { t.condition = Math.max(0, t.condition-5); if (t.condition<=0) { t.status='offline'; t.thrust=0; t.safety=false; persist(); renderDetail(); renderSystemTiles(); return; } }
+      t.thrust = next; persist(); renderDetail(); renderSystemTiles();
+    } }, '+'));
+    box.appendChild(thrustRow);
+    box.appendChild(el('button', { class:'btn btn-sm', style:'width:100%; margin-top:4px;'+(isE?'opacity:0.4;cursor:not-allowed;':''), onclick: () => { if(isE) return; if(isOn){t.status='offline';t.thrust=0;} else {t.status='online';t.thrust=100;t.safety=false;} persist(); renderDetail(); renderSystemTiles(); } }, isOn?'Power Off':'Power On'));
+    box.appendChild(el('button', { class:'btn btn-sm', style:'width:100%; margin-top:4px; color:'+(t.safety?'#e8a33d':'#9fb3c0')+';'+(isOn?'':'opacity:0.4;cursor:not-allowed;'), onclick: () => { if(!isOn) return; t.safety=!t.safety; if(!t.safety) t.thrust=Math.min(t.thrust,100); persist(); renderDetail(); } }, 'Safety Release: '+(t.safety?'ON':'OFF')));
+    box.appendChild(el('button', { class:'btn btn-sm btn-danger', style:'width:100%; margin-top:4px;', onclick: () => { if(isE){t.status='offline';t.thrust=0;} else {t.status='emergency';t.thrust=0;t.safety=false;} persist(); renderDetail(); renderSystemTiles(); } }, isE?'Reset':'Emergency Shutoff'));
+    grid.appendChild(box);
+  });
+  c.appendChild(grid);
+  c.appendChild(el('div', { class:'tiny faint', style:'margin-top:12px;' }, "Safety Release allows thrust above 100% but wears the unit down — 0% condition burns it out."));
+}
+
+function renderIncidents() {
+  const wrap = document.getElementById('incident-list'); wrap.innerHTML = '';
+  wrap.appendChild(el('div', { class:'panel-h' }, 'DAMAGE CONTROL — ACTIVE INCIDENTS'));
+  STATE.incidents.forEach((inc) => {
+    const card = el('div', { class:'card' });
+    const totalAssigned = inc.assignedTeams.reduce((a,t)=>a+t.count,0);
+    const head = el('div', { class:'row justify-between items-start' });
+    head.appendChild(el('div', {}, [
+      el('div', { style:'font-weight:600;' }, inc.title),
+      el('div', { class:'tiny dim' }, inc.description),
+      el('div', { class:'tiny dimmer' }, 'Base repair estimate: ' + inc.baseHours + ' hrs')
+    ]));
+    if (!inc.dispatched && !inc.repaired) {
+      head.appendChild(el('button', { class:'btn btn-accent btn-sm', onclick: () => openDispatchForm(inc) }, 'Dispatch Repair Crew'));
+    } else if (inc.dispatched) {
+      const right = el('div', { style:'text-align:right;' });
+      right.appendChild(el('div', { class:'tiny', style:'color:var(--accent);' }, 'In Progress — ' + REPAIR_TYPES.find(r=>r.key===inc.repairType).label));
+      inc.assignedTeams.forEach((t) => right.appendChild(el('div', { class:'tiny dim' }, t.count+'x '+t.typeLabel)));
+      right.appendChild(el('div', { class:'small', style:'margin-top:2px;' }, 'Total ' + totalAssigned + ' \u00b7 Est. ' + inc.etaHours + ' hrs'));
+      const btns = el('div', { class:'row gap-6', style:'margin-top:6px; justify-content:flex-end;' });
+      btns.appendChild(el('button', { class:'btn btn-accent btn-sm', onclick: () => openDispatchForm(inc) }, 'Add More Resources'));
+      btns.appendChild(el('button', { class:'btn btn-sm', onclick: () => completeRepair(inc) }, 'Mark Repair Complete'));
+      right.appendChild(btns);
+      head.appendChild(right);
+    } else {
+      head.appendChild(el('div', { class:'tiny', style:'color:#7fb069;' }, 'Repaired (' + REPAIR_TYPES.find(r=>r.key===inc.repairType).label + ') \u2713'));
+    }
+    card.appendChild(head);
+    card.appendChild(el('div', { id: 'dispatch-form-' + inc.id }));
+    wrap.appendChild(card);
+  });
+}
+
+const REPAIR_TYPES = [{key:'quick',label:'Quick Fix',mult:0.5},{key:'standard',label:'Standard Repair',mult:1.0},{key:'full',label:'Full Repair',mult:1.75}];
+
+function openDispatchForm(inc) {
+  const holder = document.getElementById('dispatch-form-' + inc.id);
+  if (holder.childNodes.length) { holder.innerHTML = ''; return; }
+  const isFirst = !inc.dispatched;
+  const typeSel = el('select', { style:'width:100%;' });
+  Object.entries(STATE.engineerPool).forEach(([key,p]) => typeSel.appendChild(el('option', { value:key }, p.label + ' (' + (p.total-p.allocated) + ' free)')));
+  const countIn = el('input', { type:'text', value:'2', style:'width:100%;' });
+  let repairSel = null;
+  const form = el('div', { class:'row items-end gap-8 wrap', style:'margin-top:12px; padding-top:12px; border-top:1px solid var(--panel-border);' });
+  if (isFirst) {
+    repairSel = el('select', { style:'width:100%;' });
+    REPAIR_TYPES.forEach((r) => repairSel.appendChild(el('option', { value:r.key }, r.label)));
+    form.appendChild(el('div', { class:'col', style:'width:170px;' }, [el('label',{class:'label'},'Repair Type'), repairSel]));
+  }
+  form.appendChild(el('div', { class:'col flex-grow', style:'min-width:200px;' }, [el('label',{class:'label'},'Specialist Type'), typeSel]));
+  form.appendChild(el('div', { class:'col', style:'width:100px;' }, [el('label',{class:'label'},'Engineers'), countIn]));
+  form.appendChild(el('button', { class:'btn btn-accent', onclick: () => {
+    const key = typeSel.value; const n = Math.max(1, parseInt(countIn.value,10)||1);
+    const pool = STATE.engineerPool[key]; const free = pool.total - pool.allocated;
+    const actual = Math.min(n, free); if (actual<=0) return;
+    pool.allocated += actual;
+    inc.assignedTeams.push({ typeKey:key, typeLabel:pool.label, count:actual });
+    if (isFirst) inc.repairType = repairSel.value;
+    const rt = REPAIR_TYPES.find(r=>r.key===inc.repairType);
+    const total = inc.assignedTeams.reduce((a,t)=>a+t.count,0);
+    inc.etaHours = Math.round((inc.baseHours*rt.mult/(1+0.2*total))*10)/10;
+    inc.dispatched = true;
+    holder.innerHTML = ''; persist(); renderIncidents(); renderEngineerPool(); renderModeButtons();
+  } }, isFirst?'Dispatch':'Add'));
+  form.appendChild(el('button', { class:'btn', onclick: () => { holder.innerHTML=''; } }, 'Cancel'));
+  holder.innerHTML = ''; holder.appendChild(form);
+}
+
+function completeRepair(inc) {
+  inc.assignedTeams.forEach((t) => { STATE.engineerPool[t.typeKey].allocated = Math.max(0, STATE.engineerPool[t.typeKey].allocated - t.count); });
+  inc.dispatched = false; inc.repaired = true; inc.assignedTeams = [];
+  persist(); renderIncidents(); renderEngineerPool(); renderModeButtons();
+}
+
+function renderEngineerPool() {
+  const wrap = document.getElementById('engineer-pool'); wrap.innerHTML = '';
+  Object.values(STATE.engineerPool).forEach((p) => {
+    const free = p.total - p.allocated;
+    wrap.appendChild(el('div', { style:'border-bottom:1px solid var(--panel-border); padding-bottom:6px;' }, [
+      el('div', { class:'small dim' }, p.label),
+      el('div', { class:'tiny dimmer' }, ['Total '+p.total+' \u00b7 Allocated '+p.allocated+' \u00b7 ', el('span',{style:'color:'+(free>0?'#7fb069':'#e05d5d')+';'},'Free '+free)])
+    ]));
+  });
+}
+
+function renderView() {
+  document.getElementById('status-view').style.display = STATE.viewMode==='status'?'block':'none';
+  document.getElementById('damage-view').style.display = STATE.viewMode==='damage'?'block':'none';
+  renderModeButtons();
+  if (STATE.viewMode==='status') { renderSystemTiles(); renderDetail(); }
+  else { renderIncidents(); renderEngineerPool(); }
+}
+
+applyTheme(); renderAlertButtons(); renderView();
+</script>
+</body>
+</html>
