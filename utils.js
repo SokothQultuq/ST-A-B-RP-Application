@@ -46,7 +46,11 @@ function el(tag, attrs = {}, children = []) {
   });
   (Array.isArray(children) ? children : [children]).forEach((c) => {
     if (c === null || c === undefined) return;
-    node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+    if (typeof c === 'string' || typeof c === 'number' || typeof c === 'boolean') {
+      node.appendChild(document.createTextNode(String(c)));
+    } else {
+      node.appendChild(c);
+    }
   });
   return node;
 }
