@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Medical — STAB Demo</title>
+<link rel="stylesheet" href="style.css">
+<script src="utils.js"></script>
+</head>
+<body>
+<div class="app-frame">
+  <div class="nav-links">
+    <a href="index.html">&larr; Demo Home</a>
+    <a href="character-screen.html">Character Screen</a>
+    <a href="engineering.html">Engineering</a>
+    <a href="tactical.html">Tactical</a>
+    <a href="gd-console.html">GD Console</a>
+  </div>
+  <div class="top-bar">
+    <div>
+      <div class="eyebrow">Medical Console</div>
+      <div class="title" style="font-size:20px;">USS Tempest &middot; Sickbay &amp; Wards</div>
+    </div>
+    <div class="row gap-8" id="alert-buttons"></div>
+  </div>
+  <div class="divider"></div>
+
+  <div class="grid" style="grid-template-columns: 300px 1fr; gap:16px; flex-grow:1; min-height:0;">
+    <div class="col gap-14" style="overflow:auto;">
+      <div class="panel"><div class="panel-h">MEDICAL PERSONNEL</div><div id="personnel-list" class="col gap-8"></div></div>
+      <div class="panel" style="flex-grow:1;">
+        <div class="row justify-between items-center" style="margin-bottom:4px;">
+          <div class="panel-h" style="margin-bottom:0;">WARDS &amp; BEDS</div>
+          <button class="btn btn-sm" style="border-color:#e8a33d;background:#e8a33d1f;color:#e8a33d;font-weight:700;" id="mass-casualty-btn">Mass Casualty</button>
+        </div>
+        <div class="tiny faint" style="margin:6px 0 10px;">Bed counts are illustrative — not specified in the ship's spec.</div>
+        <div id="ward-list" class="col gap-8"></div>
+      </div>
+    </div>
+    <div class="col gap-14" style="overflow:auto;">
+      <div class="panel">
+        <div class="panel-h">ADMIT PATIENT</div>
+        <div class="row items-end gap-8 wrap">
+          <div class="col flex-grow" style="min-width:180px;"><label class="label">Name</label><input id="admit-name" type="text" placeholder="e.g. Ens. Sara Ohin"></div>
+          <div class="col" style="width:180px;"><label class="label">Severity</label><select id="admit-severity"></select></div>
+          <button class="btn btn-accent" id="admit-btn">Admit</button>
+        </div>
+      </div>
+      <div class="panel" style="flex-grow:1;overflow:auto;">
+        <div class="panel-h">PATIENT ROSTER</div>
+        <div id="patient-list" class="col gap-14"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="chat-box" id="ship-chat"></div>
+</div>
+
+<script>
+const BASE_ACCENT = '#4a9eff';
+const STATE = loadState('medical', {
+  alertLevel: 'normal',
+  personnelPool: {
+    doctors: { label: 'Doctors', total: 42, allocated: 0 },
+    nurses: { label: 'Nurses', total: 89, allocated: 0 },
+    pediatricians: { label: 'Pediatricians', total: 16, allocated: 0 },
+    counselors: { label: 'Counselors', total: 22, allocated: 0 },
+    mortician: { label: 'Mortician', total: 2, allocated: 0 }
+  },
+  wards: {
+    sickbay: { label: 'Sickbay (General Biobeds)', total: 12, occupied: 0 },
+    surgical: { label: 'Surgical Ward', total: 4, occupied: 0 },
+    icu: { label: 'Intensive Care Ward', total: 6, occupied: 0 },
+    critical: { label: 'Critical Care Ward', total: 6, occupied: 0 },
+    trauma: { label: 'Trauma Stasis Ward', total: 4, occupied: 0 },
+    isolation: { label: 'Biohazard Isolation Ward', total: 2, occupied: 0 },
+    radiation: { label: 'Radiation Treatment Ward', total: 2, occupied: 0 },
+    zerog: { label: 'Zero-G Care Unit', total: 2, occupied: 0 }
+  },
+  cargoBayCount: 0,
+  patients: [],
+  admitSeverity: 'Minor Injury',
+  shipChatLog: [
+    { from: 'GD', text: 'Sickbay is standing by for incoming casualties.' },
+    { from: 'Dr. T\u2019Vann', text: 'Beds are ready.' }
+  ]
+});
+function persist() { saveState('medical', STATE); }
+function applyTheme() { applyAlertTheme(STATE.alertLevel, BASE_ACCENT); }
+const SEVERITIES = ['Minor Injury', 'Under Medical Care', 'Critical'];
+const SEVERITY_BASE = { 'Minor Injury': 2, 'Under Medical Care': 8, 'Critical': 24 };
+const SEVERITY_COLOR = { 'Minor Injury': '#e8a33d', 'Under Medical Care': '#e8a33d', 'Critical': '#e05d5d' };
+
+function renderAlertButtons() {
+  const wrap = document.getElementById('alert-buttons'); wrap.innerHTML = '';
+  ['normal', 'yellow', 'red'].forEach((lvl) => {
+    const labels = { normal: 'Normal', yellow: 'Yellow Alert', red: 'Red Alert' };
+    wrap.appendChild(el('button', { class: 'btn' + (STATE.alertLevel === lvl ? ' btn-accent' : ''), onclick: () => { STATE.alertLevel = lvl; persist(); applyTheme(); renderAlertButtons(); } }, labels[lvl]));
+  });
+}
+
+function renderPersonnel() {
+  const wrap = document.getElementById('personnel-list'); wrap.innerHTML = '';
+  Object.values(STATE.personnelPool).forEach((p) => {
+    const free = p.total - p.allocated;
+    wrap.appendChild(el('div', { style: 'border-bottom:1px solid var(--panel-border);padding-bottom:6px;' }, [
+      el('div', { class: 'small dim' }, p.label),
+      el('div', { class: 'tiny dimmer' }, ['Total ' + p.total + ' \u00b7 Allocated ' + p.allocated + ' \u00b7 ', el('span', { style: 'color:' + (free > 0 ? '#7fb069' : '#e05d5d') + ';' }, 'Free ' + free)])
+    ]));
+  });
+}
+
+function renderWards() {
+  const wrap = document.getElementById('ward-list'); wrap.innerHTML = '';
+  Object.entries(STATE.wards).forEach(([key, w]) => {
+    const free = w.total - w.occupied;
+    const box = el('div', { style: 'border-bottom:1px solid var(--panel-border);padding-bottom:6px;' });
+    box.appendChild(el('div', { class: 'row justify-between items-start' }, [
+      el('div', { class: 'small dim' }, w.label),
+      w.temporary ? el('button', { class: 'btn btn-sm', style: w.occupied === 0 ? '' : 'opacity:0.4;pointer-events:none;', onclick: () => closeWard(key) }, 'Close Ward') : null
+    ]));
+    box.appendChild(el('div', { class: 'tiny dimmer' }, ['Total ' + w.total + ' \u00b7 Occupied ' + w.occupied + ' \u00b7 ', el('span', { style: 'color:' + (free > 0 ? '#7fb069' : '#e05d5d') + ';' }, 'Free ' + free)]));
+    if (w.temporary) box.appendChild(el('div', { class: 'tiny', style: 'color:#e8a33d;margin-top:2px;' }, 'Temporary \u00b7 Dedicated staff: ' + (w.dedicatedStaff || []).map((s) => s.count + 'x ' + s.label).join(', ')));
+    wrap.appendChild(box);
+  });
+}
+function closeWard(key) {
+  const w = STATE.wards[key];
+  if (!w || w.occupied > 0) return;
+  (w.dedicatedStaff || []).forEach((s) => { const entry = STATE.personnelPool[s.typeKey]; if (entry) entry.allocated = Math.max(0, entry.allocated - s.count); });
+  delete STATE.wards[key];
+  persist(); renderAll();
+}
+document.getElementById('mass-casualty-btn').addEventListener('click', () => {
+  const doc = STATE.personnelPool.doctors, nurse = STATE.personnelPool.nurses;
+  const docTake = Math.min(1, doc.total - doc.allocated);
+  const nurseTake = Math.min(5, nurse.total - nurse.allocated);
+  doc.allocated += docTake; nurse.allocated += nurseTake;
+  STATE.cargoBayCount += 1;
+  const key = 'cargo-' + Date.now();
+  STATE.wards[key] = { label: 'Temporary Medical Ward — Cargo Bay ' + STATE.cargoBayCount, total: 20, occupied: 0, temporary: true, dedicatedStaff: [{ typeKey: 'doctors', label: 'Doctors', count: docTake }, { typeKey: 'nurses', label: 'Nurses', count: nurseTake }] };
+  persist(); renderAll();
+});
+
+function renderAdmitForm() {
+  const sel = document.getElementById('admit-severity');
+  sel.innerHTML = '';
+  SEVERITIES.forEach((s) => sel.appendChild(el('option', { value: s }, s)));
+  sel.value = STATE.admitSeverity;
+  sel.onchange = (e) => { STATE.admitSeverity = e.target.value; persist(); };
+}
+document.getElementById('admit-btn').addEventListener('click', () => {
+  const name = document.getElementById('admit-name').value.trim();
+  if (!name) return;
+  STATE.patients.push({ id: 'pt-' + Date.now(), name: name, severity: STATE.admitSeverity, wardKey: null, staff: [], treated: false });
+  document.getElementById('admit-name').value = '';
+  persist(); renderPatients(); renderWards();
+});
+
+function computeEta(base, hasBed, staffCount) { return Math.round((base * (hasBed ? 0.4 : 1.0) / (1 + 0.2 * staffCount)) * 10) / 10; }
+
+function renderPatients() {
+  const wrap = document.getElementById('patient-list'); wrap.innerHTML = '';
+  if (!STATE.patients.length) { wrap.appendChild(el('div', { class: 'faint small' }, 'No patients currently admitted.')); return; }
+  STATE.patients.forEach((pt) => {
+    const card = el('div', { class: 'card' });
+    const head = el('div', { class: 'row justify-between items-start' });
+    head.appendChild(el('div', {}, [el('div', { style: 'font-weight:600;' }, pt.name), el('div', { class: 'small', style: 'color:' + SEVERITY_COLOR[pt.severity] + ';' }, pt.severity)]));
+    if (pt.treated) head.appendChild(el('div', { class: 'small', style: 'color:#7fb069;' }, 'Discharged \u2713'));
+    else head.appendChild(el('button', { class: 'btn btn-sm', onclick: () => { pt.treated = true; (pt.staff || []).forEach((s) => { const e2 = STATE.personnelPool[s.typeKey]; if (e2) e2.allocated = Math.max(0, e2.allocated - s.count); }); if (pt.wardKey && STATE.wards[pt.wardKey]) STATE.wards[pt.wardKey].occupied = Math.max(0, STATE.wards[pt.wardKey].occupied - 1); persist(); renderAll(); } }, 'Mark Treated / Discharge'));
+    card.appendChild(head);
+
+    if (!pt.treated) {
+      const row = el('div', { class: 'row items-end gap-8 wrap', style: 'margin-top:12px;padding-top:12px;border-top:1px solid var(--panel-border);' });
+      const wardSel = el('select', { class: 'stab-input', style: 'width:200px;' });
+      wardSel.appendChild(el('option', { value: '' }, 'None (no bed)'));
+      Object.entries(STATE.wards).forEach(([k, w]) => { if (w.total - w.occupied > 0 || pt.wardKey === k) wardSel.appendChild(el('option', { value: k }, w.label + ' (' + (w.total - w.occupied) + ' free)')); });
+      wardSel.value = pt.wardKey || '';
+      wardSel.onchange = (e) => {
+        const oldW = pt.wardKey; const newW = e.target.value || null;
+        if (oldW && STATE.wards[oldW]) STATE.wards[oldW].occupied = Math.max(0, STATE.wards[oldW].occupied - 1);
+        if (newW && STATE.wards[newW]) STATE.wards[newW].occupied += 1;
+        pt.wardKey = newW; persist(); renderPatients(); renderWards();
+      };
+      row.appendChild(el('div', { class: 'col' }, [el('label', { class: 'label' }, 'Ward / Bed'), wardSel]));
+
+      const typeSel = el('select', { class: 'stab-input', style: 'width:200px;' });
+      Object.keys(STATE.personnelPool).forEach((k) => { const p = STATE.personnelPool[k]; typeSel.appendChild(el('option', { value: k }, p.label + ' (' + (p.total - p.allocated) + ' free)')); });
+      row.appendChild(el('div', { class: 'col' }, [el('label', { class: 'label' }, 'Assign Staff Type'), typeSel]));
+      const countIn = el('input', { class: 'stab-input', type: 'text', value: '1', style: 'width:80px;' });
+      row.appendChild(el('div', { class: 'col', style: 'width:80px;' }, [el('label', { class: 'label' }, 'Count'), countIn]));
+      row.appendChild(el('button', { class: 'btn', onclick: () => {
+        const typeKey = typeSel.value; const n = Math.max(1, parseInt(countIn.value, 10) || 1);
+        const entry = STATE.personnelPool[typeKey]; const free = entry.total - entry.allocated;
+        const actual = Math.min(n, free); if (actual <= 0) return;
+        entry.allocated += actual;
+        pt.staff.push({ typeKey: typeKey, label: entry.label, count: actual });
+        persist(); renderPatients();
+      } }, 'Assign'));
+      card.appendChild(row);
+
+      const staffCount = (pt.staff || []).reduce((a, s) => a + s.count, 0);
+      const eta = computeEta(SEVERITY_BASE[pt.severity], !!pt.wardKey, staffCount);
+      const summary = el('div', { class: 'small dim', style: 'margin-top:10px;' }, 'Assigned: ' + (pt.wardKey ? (STATE.wards[pt.wardKey] ? STATE.wards[pt.wardKey].label : '') + ' bed' : 'No bed') + (pt.staff.length ? ' \u00b7 ' + pt.staff.map((s) => s.count + 'x ' + s.label).join(', ') : ''));
+      card.appendChild(summary);
+      card.appendChild(el('div', { style: 'font-size:13px;color:var(--accent);margin-top:4px;' }, 'Est. treatment/diagnosis time: ' + eta + ' hrs'));
+    }
+    wrap.appendChild(card);
+  });
+}
+
+function renderAll() {
+  renderAlertButtons(); renderPersonnel(); renderWards(); renderAdmitForm(); renderPatients();
+  renderShipChat(document.getElementById('ship-chat'), () => STATE.shipChatLog, (text) => { STATE.shipChatLog.push({ from: 'You', text: text }); persist(); });
+}
+applyTheme(); renderAll();
+</script>
+</body>
+</html>

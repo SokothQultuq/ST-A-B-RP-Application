@@ -68,11 +68,18 @@
     <div class="panel-h">SYSTEM MESSAGES</div>
     <div id="messages" style="flex-grow:1; overflow:auto; display:flex; flex-direction:column; gap:4px;"></div>
   </div>
+
+  <div class="chat-box" id="ship-chat"></div>
 </div>
 
 <script>
 const BASE_ACCENT = '#4a9eff';
 const STATE = loadState('tactical', {
+  shipChatLog: [
+    { from: 'GD', text: 'Contacts holding position for now.' },
+    { from: 'Lt. Kade', text: 'Security standing by if this turns hostile.' },
+    { from: "Cmdr. T'Lira Vash", text: 'Hold fire until they show intent.' }
+  ],
   alertLevel: 'normal',
   contacts: [
     { id:'c1', name:'Klingon Bird-of-Prey', origin:'Klingon', shields:80, hull:100, weapons:85, engines:85, sensors:75, lifeSupport:90, lifeSigns:12, bearing:30, range:0.5, elevation:20 },
@@ -402,6 +409,7 @@ function renderShieldsQuick() {
 
 
 function renderAll() {
+  renderShipChat(document.getElementById('ship-chat'), () => STATE.shipChatLog, (text) => { STATE.shipChatLog.push({ from: 'You', text: text }); persist(); });
   renderContacts(); renderPlot(); renderTargeting(); renderShieldsQuick(); renderPhasers(); renderMagazineStatus(); renderTorpedoes(); renderComms(); renderTransporter(); renderMessages();
 }
 

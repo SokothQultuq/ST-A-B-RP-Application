@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ST: A&amp;B — Login</title>
+<link rel="stylesheet" href="style.css">
+<script src="utils.js"></script>
+</head>
+<body>
+<div class="app-frame" style="max-width: 1000px; align-items: center; display: flex; flex-direction: column; gap: 24px;">
+  <div style="text-align: center; margin-top: 20px;">
+    <div class="title" style="font-size: 42px; letter-spacing: 0.08em;">ST: A&amp;B</div>
+    <div class="tiny dimmer" style="letter-spacing: 0.05em; margin-top: 4px;">STAR TREK: ABOVE &amp; BEYOND &mdash; ROLEPLAY APPLICATION</div>
+  </div>
+
+  <div id="login-panel" class="panel" style="width: 420px; text-align: center;"></div>
+  <div id="vessel-section" style="width: 100%; max-width: 1000px; display: none;">
+    <div class="row justify-between items-center" style="margin-bottom: 16px;">
+      <div class="small dim">Logged in as <strong style="color: var(--accent);" id="discord-name"></strong></div>
+      <button class="btn" id="logout-btn">Log Out</button>
+    </div>
+    <div class="title" style="font-size: 15px; margin-bottom: 14px;">SELECT YOUR SHIP</div>
+    <div class="grid g2" id="vessel-grid"></div>
+  </div>
+</div>
+
+<script>
+const STATE = loadState('login', {
+  loggedIn: false,
+  discordName: 'CaptainDan#4477',
+  charSelections: {}
+});
+function persist() { saveState('login', STATE); }
+
+const VESSELS = [
+  { key: 'tempest', name: 'USS Tempest', typeLabel: 'Starship', classLabel: 'Galaxy-class', active: true, href: 'character-screen.html', characters: ['Lt. Cmdr. Dael Ferro'] },
+  { key: 'chiron', name: 'USS Chiron', typeLabel: 'Starship', classLabel: 'Class TBD', active: false, href: '', characters: [] },
+  { key: 'zorya', name: 'USS Zorya', typeLabel: 'Starship', classLabel: 'Class TBD', active: false, href: '', characters: [] },
+  { key: 'odyssey', name: 'Odyssey Station', typeLabel: 'Starbase', classLabel: 'Class TBD', active: false, href: '', characters: [] }
+];
+
+function renderLogin() {
+  const panel = document.getElementById('login-panel');
+  const section = document.getElementById('vessel-section');
+  if (!STATE.loggedIn) {
+    section.style.display = 'none';
+    panel.style.display = 'block';
+    panel.innerHTML = '';
+    panel.appendChild(el('div', { class: 'small dim', style: 'margin-bottom:16px;' }, 'Sign in to see the ships and stations you can join.'));
+    panel.appendChild(el('button', { style: 'width:100%;padding:14px;border-radius:6px;border:none;background:#5865F2;color:#fff;font-family:"IBM Plex Sans",sans-serif;font-size:14px;font-weight:600;cursor:pointer;', onclick: () => { STATE.loggedIn = true; persist(); renderLogin(); } }, 'Log in with Discord'));
+    panel.appendChild(el('div', { class: 'tiny faint', style: 'margin-top:10px;' }, "Your identity is tied to your Discord account — no separate STAB password."));
+  } else {
+    panel.style.display = 'none';
+    section.style.display = 'block';
+    document.getElementById('discord-name').textContent = STATE.discordName;
+    renderVessels();
+  }
+}
+document.getElementById('logout-btn').addEventListener('click', () => { STATE.loggedIn = false; persist(); renderLogin(); });
+
+function renderVessels() {
+  const grid = document.getElementById('vessel-grid');
+  grid.innerHTML = '';
+  VESSELS.forEach((v) => {
+    const card = el('div', { style: 'border:1px solid ' + (v.active ? 'var(--accent)' : '#1c2938') + ';border-radius:8px;padding:18px;background:#0f151a;' + (v.active ? '' : 'opacity:0.6;') });
+    const head = el('div', { class: 'row justify-between items-start' });
+    head.appendChild(el('div', {}, [
+      el('div', { class: 'title', style: 'font-size:18px;' }, v.name),
+      el('div', { class: 'tiny dimmer', style: 'margin-top:2px;' }, v.typeLabel + ' \u00b7 ' + v.classLabel)
+    ]));
+    head.appendChild(el('div', { style: 'font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:' + (v.active ? '#7fb069' : '#6b7d89') + ';' }, v.active ? 'Active' : 'Coming Soon'));
+    card.appendChild(head);
+
+    const charOptions = v.active ? ['\u2014 Select Character \u2014', ...v.characters] : ['No characters yet'];
+    const selected = STATE.charSelections[v.key] || charOptions[0];
+    const select = el('select', { class: 'stab-input', style: 'width:100%;margin-top:12px;' + (v.active ? '' : 'opacity:0.5;') });
+    charOptions.forEach((c) => select.appendChild(el('option', { value: c }, c)));
+    select.value = selected;
+    select.disabled = !v.active;
+    select.addEventListener('change', (e) => { STATE.charSelections[v.key] = e.target.value; persist(); renderVessels(); });
+
+    const row1 = el('div', { class: 'row gap-6', style: 'margin-top:8px;' });
+    row1.appendChild(select);
+    const hasReal = v.active && v.characters.includes(selected);
+    row1.appendChild(el('a', { class: 'btn', style: 'padding:8px 12px;text-decoration:none;' + (hasReal ? '' : 'opacity:0.4;pointer-events:none;'), href: hasReal ? 'character-sheet.html' : '#' }, 'Edit'));
+    card.appendChild(row1);
+
+    const row2 = el('div', { class: 'row gap-8', style: 'margin-top:8px;' });
+    row2.appendChild(el('a', { class: 'btn', style: 'flex:1;text-align:center;text-decoration:none;' + (v.active ? '' : 'opacity:0.4;pointer-events:none;'), href: v.active ? 'character-sheet.html' : '#' }, 'Create Character'));
+    row2.appendChild(el('a', { class: v.active ? 'link-btn' : 'btn', style: 'flex:1;text-align:center;text-decoration:none;' + (v.active ? '' : 'opacity:0.4;pointer-events:none;color:#566873;'), href: v.active ? v.href : '#' }, v.active ? 'Join Game \u2192' : 'Not Yet Available'));
+    card.appendChild(row2);
+
+    grid.appendChild(card);
+  });
+}
+
+renderLogin();
+</script>
+</body>
+</html>

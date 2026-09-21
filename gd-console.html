@@ -11,10 +11,14 @@
   <div class="nav-links">
     <a href="index.html">&larr; Demo Home</a>
     <a href="character-sheet.html">Character Sheet</a>
-    <a href="character-screen.html">Character Screen</a>
     <a href="engineering.html">Engineering</a>
     <a href="tactical.html">Tactical</a>
+    <a href="medical.html">Medical</a>
+    <a href="science.html">Science</a>
+    <a href="security.html">Security</a>
+    <a href="navigation.html">Navigation</a>
     <a href="npc-ships.html">NPC Ship Library</a>
+    <a href="inventory.html">Inventory</a>
   </div>
   <div class="top-bar">
     <div>
@@ -25,6 +29,8 @@
   </div>
   <div class="row gap-6 wrap" id="tabs" style="margin-bottom:14px;"></div>
   <div id="tab-content"></div>
+
+  <div class="chat-box" id="ship-chat"></div>
 </div>
 
 <script>
@@ -38,6 +44,13 @@ const STATE = loadState('gd-console', {
   templateDraft: 'tpl-kbop',
   npcInstances: [
     { id:'gd-inst-1', designation:'Hunter Vessel Alpha', origin:'Klingon', className:"B'rel-class Bird-of-Prey", templateName:'Klingon Bird-of-Prey', lifeSigns:'12', sysShields:'75', sysWeapons:'80', sysEngines:'85', sysSensors:'70', notes:'', damageLog:[] }
+  ],
+  genDesignation: '', genOrigin: '', genClass: '', genLifeSigns: '', genShields: '80', genWeapons: '80', genEngines: '80', genSensors: '80',
+  medQuickName: '', medQuickSeverity: 'Minor Injury', casualtyScenario: 'small_explosion', gdPatients: [],
+  secQuickName: '', secBrigOccupied: 0,
+  shipChatLog: [
+    { from: 'GD', text: 'Session resuming shortly.' },
+    { from: "Cmdr. T'Lira Vash", text: 'Standing by.' }
   ]
 });
 function persist() { saveState('gd-console', STATE); }
@@ -166,17 +179,194 @@ function renderCharactersTab(c) {
 const DAMAGE_TARGETS = ['Shields','Weapons','Engines','Sensors','Life Signs'];
 const DAMAGE_FIELD_MAP = {Shields:'sysShields',Weapons:'sysWeapons',Engines:'sysEngines',Sensors:'sysSensors','Life Signs':'lifeSigns'};
 
+const MED_SEVERITIES = ['Minor Injury', 'Under Medical Care', 'Critical'];
+const MED_SEVERITY_COLOR = { 'Minor Injury': '#e8a33d', 'Under Medical Care': '#e8a33d', 'Critical': '#e05d5d' };
+const SCENARIOS = [
+  { key: 'small_explosion', label: 'Small Explosion', countMin: 1, countMax: 2, weights: [0.40, 0.45, 0.15] },
+  { key: 'medium_explosion', label: 'Medium Explosion', countMin: 2, countMax: 4, weights: [0.20, 0.45, 0.35] },
+  { key: 'large_explosion', label: 'Large Explosion', countMin: 4, countMax: 8, weights: [0.10, 0.35, 0.55] },
+  { key: 'console_explosion', label: 'Console Explosion', countMin: 1, countMax: 1, weights: [0.20, 0.50, 0.30] },
+  { key: 'fall_height', label: 'Fall from Height', countMin: 1, countMax: 1, weights: [0.35, 0.40, 0.25] },
+  { key: 'sports_injury', label: 'Sports Injury', countMin: 1, countMax: 1, weights: [0.80, 0.20, 0.00] },
+  { key: 'phaser_shot', label: 'Shot by Phaser', countMin: 1, countMax: 1, weights: [0.15, 0.55, 0.30] },
+  { key: 'disruptor_shot', label: 'Shot by Disruptor', countMin: 1, countMax: 1, weights: [0.05, 0.35, 0.60] },
+  { key: 'radiation_exposure', label: 'Radiation Exposure', countMin: 1, countMax: 3, weights: [0.20, 0.40, 0.40] },
+  { key: 'toxic_exposure', label: 'Toxic / Biohazard Exposure', countMin: 1, countMax: 2, weights: [0.25, 0.45, 0.30] },
+  { key: 'vacuum_exposure', label: 'Vacuum / Hull Breach Exposure', countMin: 1, countMax: 4, weights: [0.10, 0.30, 0.60] },
+  { key: 'plasma_burn', label: 'Plasma Conduit Burn', countMin: 1, countMax: 2, weights: [0.25, 0.45, 0.30] },
+  { key: 'melee_injury', label: 'Hand-to-Hand Combat Injury', countMin: 1, countMax: 2, weights: [0.45, 0.40, 0.15] },
+  { key: 'psychological_trauma', label: 'Psychological Trauma / Shock', countMin: 1, countMax: 2, weights: [0.60, 0.35, 0.05] }
+];
+const NAME_RANKS = ['Crewman', 'Ensign', 'Lt. j.g.', 'Lieutenant', 'PO2', 'CPO'];
+const NAME_SURNAMES = ['Okafor', 'Ramirez', 'Delgado', 'Sato', 'Kowalski', 'Ibsen', 'Chen', 'Okoye', 'Novak', 'Pierce', 'Adeyemi', 'Larkin', 'Voss', 'Tanaka', 'Reyes'];
+function weightedSeverity(weights) {
+  const r = Math.random();
+  if (r < weights[0]) return MED_SEVERITIES[0];
+  if (r < weights[0] + weights[1]) return MED_SEVERITIES[1];
+  return MED_SEVERITIES[2];
+}
+function randomName() { return NAME_RANKS[Math.floor(Math.random() * NAME_RANKS.length)] + ' ' + NAME_SURNAMES[Math.floor(Math.random() * NAME_SURNAMES.length)]; }
+
+function renderMedicalTab(c) {
+  const p = el('div', { class: 'panel' });
+  p.appendChild(el('div', { class: 'panel-h' }, 'MEDICAL — QUICK CONTROL'));
+  p.appendChild(el('div', { class: 'tiny dimmer', style: 'margin-bottom:12px;' }, 'Snapshot of staff/bed availability, plus quick ways to send patients to Medical.'));
+  const grid = el('div', { class: 'grid g2', style: 'margin-bottom:14px;' });
+  const medDefaults = { doctors: 42, nurses: 89, pediatricians: 16, counselors: 22, mortician: 2 };
+  const medLabels = { doctors: 'Doctors', nurses: 'Nurses', pediatricians: 'Pediatricians', counselors: 'Counselors', mortician: 'Mortician' };
+  const wardDefaults = { sickbay: 12, surgical: 4, icu: 6, critical: 6, trauma: 4, isolation: 2, radiation: 2, zerog: 2 };
+  const wardLabels = { sickbay: 'Sickbay', surgical: 'Surgical Ward', icu: 'ICU', critical: 'Critical Care', trauma: 'Trauma Stasis', isolation: 'Biohazard Isolation', radiation: 'Radiation Treatment', zerog: 'Zero-G Care Unit' };
+  const personnelCol = el('div', {}, [el('div', { class: 'tiny dimmer', style: 'text-transform:uppercase;letter-spacing:0.07em;margin-bottom:6px;' }, 'Personnel Free')]);
+  Object.keys(medDefaults).forEach((k) => personnelCol.appendChild(el('div', { class: 'small dim' }, [medLabels[k] + ': ', el('span', { style: 'color:#7fb069;' }, String(medDefaults[k]))])));
+  const wardCol = el('div', {}, [el('div', { class: 'tiny dimmer', style: 'text-transform:uppercase;letter-spacing:0.07em;margin-bottom:6px;' }, 'Beds Free')]);
+  Object.keys(wardDefaults).forEach((k) => wardCol.appendChild(el('div', { class: 'small dim' }, [wardLabels[k] + ': ', el('span', { style: 'color:#7fb069;' }, String(wardDefaults[k]))])));
+  grid.appendChild(personnelCol); grid.appendChild(wardCol);
+  p.appendChild(grid);
+
+  const row = el('div', { class: 'row items-end gap-8 wrap' });
+  const nameIn = el('input', { type: 'text', value: STATE.medQuickName, style: 'width:100%;' }); nameIn.onchange = (e) => { STATE.medQuickName = e.target.value; persist(); };
+  const sevSel = el('select', {});
+  MED_SEVERITIES.forEach((s) => sevSel.appendChild(el('option', { value: s }, s)));
+  sevSel.value = STATE.medQuickSeverity; sevSel.onchange = (e) => { STATE.medQuickSeverity = e.target.value; persist(); };
+  row.appendChild(el('div', { class: 'col flex-grow', style: 'min-width:180px;' }, [el('label', { class: 'label' }, 'Patient Name'), nameIn]));
+  row.appendChild(el('div', { class: 'col', style: 'width:180px;' }, [el('label', { class: 'label' }, 'Severity'), sevSel]));
+  row.appendChild(el('button', { class: 'btn btn-accent', onclick: () => {
+    const name = STATE.medQuickName.trim(); if (!name) return;
+    STATE.gdPatients.push({ id: 'gdpt-' + Date.now(), name: name, severity: STATE.medQuickSeverity, cause: '', resolved: false });
+    STATE.medQuickName = ''; persist(); renderContent();
+  } }, 'Send to Medical'));
+  p.appendChild(row);
+  c.appendChild(p);
+
+  const genPanel = el('div', { class: 'panel' });
+  genPanel.appendChild(el('div', { class: 'panel-h' }, 'CASUALTY GENERATOR'));
+  genPanel.appendChild(el('div', { class: 'tiny dimmer', style: 'margin-bottom:12px;' }, 'Pick a scenario and generate one or more casualties, sent straight to the Patient Roster below.'));
+  const genRow = el('div', { class: 'row items-end gap-8 wrap' });
+  const scenSel = el('select', { style: 'flex-grow:1; min-width:220px;' });
+  SCENARIOS.forEach((s) => scenSel.appendChild(el('option', { value: s.key }, s.label)));
+  scenSel.value = STATE.casualtyScenario; scenSel.onchange = (e) => { STATE.casualtyScenario = e.target.value; persist(); };
+  genRow.appendChild(el('div', { class: 'col flex-grow', style: 'min-width:220px;' }, [el('label', { class: 'label' }, 'Scenario'), scenSel]));
+  genRow.appendChild(el('button', { style: 'padding:10px 18px;border-radius:6px;border:1px solid #e8a33d;background:#e8a33d1f;color:#e8a33d;font-family:"IBM Plex Sans",sans-serif;font-size:13px;font-weight:700;cursor:pointer;', onclick: () => {
+    const scenario = SCENARIOS.find((s) => s.key === STATE.casualtyScenario) || SCENARIOS[0];
+    const count = scenario.countMin + Math.floor(Math.random() * (scenario.countMax - scenario.countMin + 1));
+    for (let i = 0; i < count; i++) STATE.gdPatients.push({ id: 'gdpt-' + Date.now() + '-' + i + '-' + Math.floor(Math.random() * 1000), name: randomName(), severity: weightedSeverity(scenario.weights), cause: scenario.label, resolved: false });
+    persist(); renderContent();
+  } }, 'Generate Casualties'));
+  genPanel.appendChild(genRow);
+  c.appendChild(genPanel);
+
+  const rosterPanel = el('div', { class: 'panel' });
+  rosterPanel.appendChild(el('div', { class: 'panel-h' }, 'PATIENT ROSTER'));
+  if (!STATE.gdPatients.length) rosterPanel.appendChild(el('div', { class: 'faint small' }, 'No patients sent to Medical yet.'));
+  STATE.gdPatients.forEach((pt) => {
+    rosterPanel.appendChild(el('div', { class: 'row justify-between items-center card' }, [
+      el('div', {}, [el('div', { style: 'font-weight:600;' }, pt.name), el('div', { class: 'small', style: 'color:' + MED_SEVERITY_COLOR[pt.severity] + ';' }, pt.severity + (pt.cause ? ' \u00b7 ' + pt.cause : ''))]),
+      pt.resolved ? el('div', { class: 'small', style: 'color:#7fb069;' }, 'Discharged \u2713') : el('button', { class: 'btn btn-sm', onclick: () => { pt.resolved = true; persist(); renderContent(); } }, 'Resolve / Discharge')
+    ]));
+  });
+  c.appendChild(rosterPanel);
+
+  c.appendChild(el('div', { class: 'panel' }, [
+    el('div', { class: 'panel-h' }, 'MEDICAL — FULL CONSOLE'),
+    el('div', { class: 'small dim', style: 'margin-bottom:12px;' }, 'Sickbay wards/beds, personnel pool, and full patient admission & assignment workflow.'),
+    el('a', { class: 'link-btn', href: 'medical.html' }, 'Open Full Medical Console \u2192')
+  ]));
+}
+
+function renderScienceTab(c) {
+  const p = el('div', { class: 'panel' });
+  p.appendChild(el('div', { class: 'panel-h' }, 'SCIENCE — QUICK CONTROL'));
+  p.appendChild(el('div', { class: 'tiny dimmer', style: 'margin-bottom:12px;' }, 'Snapshot of lab availability, plus a quick way to log a scan/analysis result.'));
+  const labDefaults = { general: ['General Purpose Lab', 22], geology: ['Geology Lab', 5], astrometric: ['Astrometric Lab', 4], bioChem: ['Bio-Chem Lab', 6], physics: ['Physics Lab', 8], hydroponics: ['Hydroponics Lab', 5] };
+  const labWrap = el('div', { style: 'margin-bottom:14px;' }, [el('div', { class: 'tiny dimmer', style: 'text-transform:uppercase;letter-spacing:0.07em;margin-bottom:6px;' }, 'Labs Free')]);
+  Object.values(labDefaults).forEach(([label, total]) => labWrap.appendChild(el('div', { class: 'small dim' }, [label + ': ', el('span', { style: 'color:#7fb069;' }, String(total))])));
+  p.appendChild(labWrap);
+  const row = el('div', { class: 'row items-end gap-8 wrap' });
+  const subjIn = el('input', { type: 'text', placeholder: 'e.g. Debris Field', value: STATE.sciQuickSubject || '', style: 'width:100%;' });
+  subjIn.onchange = (e) => { STATE.sciQuickSubject = e.target.value; persist(); };
+  row.appendChild(el('div', { class: 'col flex-grow', style: 'min-width:220px;' }, [el('label', { class: 'label' }, 'Subject'), subjIn]));
+  row.appendChild(el('button', { class: 'btn btn-accent', onclick: () => {
+    const subj = (STATE.sciQuickSubject || '').trim(); if (!subj) return;
+    STATE.sciQuickSubject = ''; STATE.sciLogText = 'Scan of ' + subj + ' logged to the science database.';
+    persist(); renderContent();
+  } }, 'Log Scan Result'));
+  p.appendChild(row);
+  if (STATE.sciLogText) p.appendChild(el('div', { class: 'tiny', style: 'color:#e8a33d; margin-top:10px;' }, STATE.sciLogText));
+  c.appendChild(p);
+  c.appendChild(el('div', { class: 'panel' }, [
+    el('div', { class: 'panel-h' }, 'SCIENCE — FULL CONSOLE'),
+    el('div', { class: 'small dim', style: 'margin-bottom:12px;' }, 'Lab assignment, personnel pool, research projects, and sensor analysis.'),
+    el('a', { class: 'link-btn', href: 'science.html' }, 'Open Full Science Console \u2192')
+  ]));
+}
+
+function renderSecurityTab(c) {
+  const p = el('div', { class: 'panel' });
+  p.appendChild(el('div', { class: 'panel-h' }, 'SECURITY — QUICK CONTROL'));
+  p.appendChild(el('div', { class: 'tiny dimmer', style: 'margin-bottom:12px;' }, 'Brig snapshot, plus a quick detain action without opening the full console.'));
+  p.appendChild(el('div', { class: 'small dim', style: 'margin-bottom:14px;' }, 'Brig \u2014 Free ' + (6 - STATE.secBrigOccupied) + ' / 6'));
+  const row = el('div', { class: 'row items-end gap-8 wrap' });
+  const nameIn = el('input', { type: 'text', value: STATE.secQuickName, style: 'width:100%;' }); nameIn.onchange = (e) => { STATE.secQuickName = e.target.value; persist(); };
+  row.appendChild(el('div', { class: 'col flex-grow', style: 'min-width:200px;' }, [el('label', { class: 'label' }, 'Name'), nameIn]));
+  row.appendChild(el('button', { class: 'btn btn-accent', onclick: () => {
+    const name = STATE.secQuickName.trim(); if (!name) return;
+    STATE.secBrigOccupied = Math.min(6, STATE.secBrigOccupied + 1);
+    STATE.secLogText = name + ' detained in the Brig.'; STATE.secQuickName = '';
+    persist(); renderContent();
+  } }, 'Quick Detain'));
+  p.appendChild(row);
+  if (STATE.secLogText) p.appendChild(el('div', { class: 'tiny', style: 'color:#e8a33d; margin-top:10px;' }, STATE.secLogText));
+  c.appendChild(p);
+  c.appendChild(el('div', { class: 'panel' }, [
+    el('div', { class: 'panel-h' }, 'SECURITY — FULL CONSOLE'),
+    el('div', { class: 'small dim', style: 'margin-bottom:12px;' }, 'Armory inventory, personnel pool, brig/detainee management, and security alerts.'),
+    el('a', { class: 'link-btn', href: 'security.html' }, 'Open Full Security Console \u2192')
+  ]));
+}
+
 function renderNpcShipsTab(c) {
   const p = el('div', { class:'panel' });
   p.appendChild(el('div', { class:'row justify-between items-center', style:'margin-bottom:12px;' }, [
     el('div',{class:'panel-h',style:'margin-bottom:0;'},'ACTIVE NPC SHIPS'),
-    el('a',{class:'link-btn',style:'padding:8px 14px; font-size:12px;',href:'npc-ships.html'},'Manage Templates \u2192')
+    el('div', { class: 'row gap-8' }, [
+      el('a',{class:'btn',style:'text-decoration:none;',href:'npc-ships.html'},'Manage Templates \u2192'),
+      el('a',{class:'link-btn',style:'padding:8px 14px; font-size:12px;',href:'inventory.html'},'Open Full Inventory \u2192')
+    ])
   ]));
+
+  const genBox = el('div', { style:'padding:14px;border:1px solid var(--panel-border);border-radius:8px;background:var(--panel-bg);margin-bottom:12px;' });
+  genBox.appendChild(el('div', { style:'font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:#e8a33d;margin-bottom:10px;' }, 'Quick Generate NPC (On the Fly)'));
+  const genRow1 = el('div', { class:'row gap-8 wrap', style:'margin-bottom:10px;' });
+  const designIn = el('input', { type:'text', placeholder:'e.g. Hunter Vessel Beta', value: STATE.genDesignation, style:'width:100%;' }); designIn.onchange = (e) => { STATE.genDesignation = e.target.value; persist(); };
+  const originIn = el('input', { type:'text', placeholder:'e.g. Orion', value: STATE.genOrigin, style:'width:100%;' }); originIn.onchange = (e) => { STATE.genOrigin = e.target.value; persist(); };
+  const classIn = el('input', { type:'text', placeholder:'e.g. Raider', value: STATE.genClass, style:'width:100%;' }); classIn.onchange = (e) => { STATE.genClass = e.target.value; persist(); };
+  const lifeIn = el('input', { type:'text', value: STATE.genLifeSigns, style:'width:100%;' }); lifeIn.onchange = (e) => { STATE.genLifeSigns = e.target.value; persist(); };
+  genRow1.appendChild(el('div',{class:'col flex-grow',style:'min-width:160px;'},[el('label',{class:'label'},'Designation'),designIn]));
+  genRow1.appendChild(el('div',{class:'col',style:'width:140px;'},[el('label',{class:'label'},'Origin'),originIn]));
+  genRow1.appendChild(el('div',{class:'col',style:'width:160px;'},[el('label',{class:'label'},'Class'),classIn]));
+  genRow1.appendChild(el('div',{class:'col',style:'width:100px;'},[el('label',{class:'label'},'Life Signs'),lifeIn]));
+  genBox.appendChild(genRow1);
+  const genRow2 = el('div', { class:'row gap-8 wrap items-end' });
+  const statFields = [['genShields','Shields %'],['genWeapons','Weapons %'],['genEngines','Engines %'],['genSensors','Sensors %']];
+  statFields.forEach(([key,label]) => {
+    const inp = el('input', { type:'text', value: STATE[key], style:'width:100%;' }); inp.onchange = (e) => { STATE[key] = e.target.value; persist(); };
+    genRow2.appendChild(el('div',{class:'col',style:'width:90px;'},[el('label',{class:'label'},label),inp]));
+  });
+  genRow2.appendChild(el('button', { style:'padding:10px 18px;border-radius:6px;border:1px solid #e8a33d;background:#e8a33d1f;color:#e8a33d;font-family:"IBM Plex Sans",sans-serif;font-size:13px;font-weight:700;cursor:pointer;', onclick: () => {
+    const desig = STATE.genDesignation.trim(); if (!desig) return;
+    STATE.npcInstances.push({ id:'gd-gen-'+Date.now(), designation: desig, origin: STATE.genOrigin.trim() || 'Unknown', className: STATE.genClass.trim() || 'Unknown Class', templateName: desig,
+      lifeSigns: STATE.genLifeSigns || '?', sysShields: STATE.genShields, sysWeapons: STATE.genWeapons, sysEngines: STATE.genEngines, sysSensors: STATE.genSensors, notes:'', damageLog:[] });
+    STATE.genDesignation=''; STATE.genOrigin=''; STATE.genClass=''; STATE.genLifeSigns=''; STATE.genShields='80'; STATE.genWeapons='80'; STATE.genEngines='80'; STATE.genSensors='80';
+    persist(); renderContent();
+  } }, 'Generate & Add to Encounter'));
+  genBox.appendChild(genRow2);
+  p.appendChild(genBox);
+
   const addRow = el('div', { class:'row items-end gap-8', style:'margin-bottom:16px; padding:14px; border:1px solid var(--panel-border); border-radius:8px; background:var(--panel-bg);' });
   const tplSel = el('select', { style:'flex-grow:1;' });
   TEMPLATE_OPTIONS.forEach(t=>tplSel.appendChild(el('option',{value:t.id},t.name+' ('+t.origin+')')));
   tplSel.value = STATE.templateDraft; tplSel.onchange=(e)=>{STATE.templateDraft=e.target.value;persist();};
-  addRow.appendChild(el('div',{class:'col flex-grow'},[el('label',{class:'label'},'Add Ship From Templates'),tplSel]));
+  addRow.appendChild(el('div',{class:'col flex-grow'},[el('label',{class:'label'},'Or Add Ship From Saved Templates'),tplSel]));
   addRow.appendChild(el('button', { class:'btn btn-accent', onclick: () => {
     const tpl = TEMPLATE_OPTIONS.find(t=>t.id===STATE.templateDraft) || TEMPLATE_OPTIONS[0];
     STATE.npcInstances.push({ id:'gd-inst-'+Date.now(), designation: tpl.name, origin: tpl.origin, className: tpl.className, templateName: tpl.name,
@@ -235,12 +425,13 @@ function renderContent() {
   const c = document.getElementById('tab-content'); c.innerHTML = '';
   if (STATE.activeTab==='tactical') renderTacticalTab(c);
   else if (STATE.activeTab==='engineering') renderEngineeringTab(c);
-  else if (STATE.activeTab==='science') c.appendChild(placeholderPanel('SCIENCE','Not yet designed. This will cover sensor analysis, scientific instrumentation, anomaly tracking, and away-mission science support.'));
-  else if (STATE.activeTab==='medical') c.appendChild(placeholderPanel('MEDICAL','Not yet designed. This will cover Sickbay status, patient tracking, and crew Health Status updates.'));
-  else if (STATE.activeTab==='security') c.appendChild(placeholderPanel('SECURITY','Not yet designed. This will cover armory/weapons locker inventory, brig status, and internal security alerts.'));
+  else if (STATE.activeTab==='science') renderScienceTab(c);
+  else if (STATE.activeTab==='medical') renderMedicalTab(c);
+  else if (STATE.activeTab==='security') renderSecurityTab(c);
   else if (STATE.activeTab==='navigation') c.appendChild(placeholderPanel('NAVIGATION / HELM','Not yet designed. This will cover course plotting, warp/impulse speed control, and heading/position.'));
   else if (STATE.activeTab==='characters') renderCharactersTab(c);
   else if (STATE.activeTab==='npcships') renderNpcShipsTab(c);
+  renderShipChat(document.getElementById('ship-chat'), () => STATE.shipChatLog, (text) => { STATE.shipChatLog.push({ from: 'You', text: text }); persist(); });
 }
 
 applyTheme(); renderAlertButtons(); renderContent();

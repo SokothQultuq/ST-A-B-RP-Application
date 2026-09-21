@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Player Ship Creation — STAB Demo</title>
+<link rel="stylesheet" href="style.css">
+<script src="utils.js"></script>
+</head>
+<body>
+<div class="app-frame">
+  <div class="nav-links">
+    <a href="index.html">&larr; Demo Home</a>
+    <a href="support-craft-creation.html">Support Craft Creation</a>
+    <a href="inventory.html">Inventory</a>
+    <a href="gd-console.html">GD Console</a>
+  </div>
+  <div class="top-bar"><div><div class="eyebrow">GD / Command Tools</div><div class="title" style="font-size:20px;">Player Ship Creation</div></div></div>
+  <div class="divider"></div>
+
+  <div class="grid" style="grid-template-columns: 1fr 320px; gap:16px; flex-grow:1; min-height:0;">
+    <div class="panel" style="display:flex;flex-direction:column;overflow:hidden;">
+      <div class="panel-h" id="editor-heading"></div>
+      <div class="row gap-4 wrap" id="tab-bar" style="margin-bottom:14px;"></div>
+      <div id="tab-content" style="flex-grow:1;overflow:auto;"></div>
+      <div class="row gap-8" style="padding-top:14px;margin-top:4px;border-top:1px solid var(--panel-border);">
+        <button class="btn btn-accent" id="save-btn"></button>
+        <button class="btn btn-danger" id="delete-btn" style="display:none;">Delete</button>
+      </div>
+    </div>
+    <div class="col gap-10">
+      <button class="btn" style="border-style:dashed;" id="new-ship-btn">+ New Ship</button>
+      <div class="panel" style="flex-grow:1;overflow:auto;">
+        <div class="panel-h">REGISTERED SHIPS</div>
+        <div id="ship-list" class="col gap-8"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const TABS = [
+  { key: 'identity', label: 'Identity & Dimensions' },
+  { key: 'crew', label: 'Crew Demographics' },
+  { key: 'defensive', label: 'Defensive Systems' },
+  { key: 'propulsion', label: 'Power & Propulsion' },
+  { key: 'lifesupport', label: 'Life Support' },
+  { key: 'sensors', label: 'Sensors & Transporters' },
+  { key: 'decks', label: 'Deck By Deck Layout' },
+  { key: 'supportcraft', label: 'Support Craft' }
+];
+
+function blankShip() {
+  return {
+    id: null, name: '', registry: '', shipClass: '', shipyard: '', commissioned: '', designEngineer: '', shipType: '',
+    shipHistoryEntries: [], previousCOs: [],
+    decks: '', length: '', height: '', mass: '',
+    totalSouls: '', standardCrew: '', curCrew: '', maxLifeSupport: '',
+    departments: { command: [], engineeringDept: [], flightOpsDept: [], securityDept: [], medicalDept: [], scienceDept: [], civilians: [] },
+    uniqueDepartments: [],
+    deckDataMap: {},
+    mainPowerSources: [{ id: 'mp-1', name: 'Warp Drive', baseline: '', maxWarp: '', cruiseWarp: '', reactorType: '', reactorMake: '', reactorModel: '', fuelSystem: '', equipment: [] }],
+    sysShields: '', shieldGenerators: '', shieldZones: '', sysWeapons: '', phaserArrays: '', torpedoLaunchers: '',
+    auxPowerBaseline: '', impulseReactors: '', emergencyGenerators: '', emergencyPowerNotes: '', rcsBaseline: '', rcsThrusters: '',
+    sysLifeSupport: '', lifeSupportGenerators: '', sysSensors: '', scienceLabs: '', sysTransporters: ''
+  };
+}
+
+function tempestShip() {
+  return {
+    id: 'ship-tempest', name: 'USS Tempest', registry: 'NCC-1852-A', shipClass: 'Galaxy-class (Up-Rated)', shipyard: 'Utopia Planitia Fleet Shipyards', commissioned: '2363', designEngineer: '', shipType: 'Explorer',
+    shipHistoryEntries: [], previousCOs: [],
+    decks: '42', length: '642.51', height: '195.26', mass: '4750000',
+    totalSouls: '1450', standardCrew: '1024', curCrew: '993', maxLifeSupport: '15000',
+    departments: {
+      command: [],
+      engineeringDept: [
+        { name: 'General Engineers', count: '24' }, { name: 'Warp Theory Specialists', count: '12' }, { name: 'Architectural Engineer', count: '6' }, { name: 'Mechanical Engineers', count: '10' },
+        { name: 'Impulse Specialist', count: '18' }, { name: 'Sensor Calibration Specialist', count: '11' }, { name: 'Flight Systems Specialist', count: '12' }, { name: 'Atmospheric Technology Specialist', count: '6' },
+        { name: 'Maintenance', count: '82' }, { name: 'Transporter Technicians', count: '24' }, { name: 'Computer Systems Specialist', count: '12' }, { name: 'Life Support Subsystems Specialist', count: '24' }
+      ],
+      flightOpsDept: [],
+      securityDept: [{ name: 'Tactical Officers', count: '15' }, { name: 'Security Officers', count: '111' }, { name: 'Armory Officers', count: '45' }],
+      medicalDept: [{ name: 'Doctors', count: '42' }, { name: 'Nurses', count: '89' }, { name: 'Pediatricians', count: '16' }, { name: 'Counselors', count: '22' }, { name: 'Mortician', count: '2' }],
+      scienceDept: [
+        { name: 'General Science Officers', count: '54' }, { name: 'Geologists', count: '9' }, { name: 'Entomologists', count: '13' }, { name: 'Zoologists', count: '14' },
+        { name: 'Biologists', count: '18' }, { name: 'Astronomers', count: '20' }, { name: 'Theologists', count: '8' }, { name: 'Marine Biologists', count: '6' },
+        { name: 'Anthropologists', count: '6' }, { name: 'Historians', count: '8' }, { name: 'Molecular Biologists', count: '22' }, { name: 'Meteorologists', count: '12' },
+        { name: 'Astrophysicists', count: '48' }, { name: 'Holographic Specialists', count: '6' }
+      ],
+      civilians: [{ name: 'Civilians Aboard', count: '349' }]
+    },
+    uniqueDepartments: [{ id: 'ud-marines', name: 'Marine Company', positions: [{ name: 'Marine Company', count: '108' }] }],
+    deckDataMap: {
+      '1': { rooms: [{ name: 'Bridge' }], equipment: [] },
+      '11': { rooms: [{ name: 'Holodecks' }], equipment: [] },
+      '12': { rooms: [
+        { name: 'Sickbay' }, { name: 'Morgue' }, { name: 'Medical Laboratories' }, { name: "Chief Medical Officer's Office" },
+        { name: 'Surgical Ward' }, { name: 'Intensive Care Ward' }, { name: 'Critical Care Ward' }, { name: 'Trauma Stasis Ward' },
+        { name: 'Biohazard Isolation Ward' }, { name: 'Radiation Treatment Ward' }, { name: 'Zero-G Care Unit' }, { name: 'Medical Supply Storage' },
+        { name: 'Gymnasium' }, { name: 'Weight Room' }, { name: 'Computer Core (Level 8)' }
+      ], equipment: [] },
+      '15': { rooms: [{ name: 'Primary Armory (Saucer)' }], equipment: [] },
+      '16': { rooms: [{ name: 'Secondary Armory (Stardrive)' }], equipment: [] }
+    },
+    mainPowerSources: [
+      { id: 'mp-warp', name: 'Warp Drive', baseline: '95', maxWarp: '9.99', cruiseWarp: '8', reactorType: 'M/ARA Warp Drive', reactorMake: 'GE', reactorModel: 'Type XII', fuelSystem: 'Deuterium / Antimatter', equipment: [] },
+      { id: 'mp-slipstream', name: 'Quantum Slipstream Drive', baseline: '', maxWarp: '', cruiseWarp: '', reactorType: 'Quantum Slipstream Drive', reactorMake: 'Cochran', reactorModel: 'QSD', fuelSystem: '', equipment: [{ name: 'EPS Power Capacitors' }] }
+    ],
+    sysShields: '90', shieldGenerators: '18', shieldZones: '6', sysWeapons: '90', phaserArrays: '12', torpedoLaunchers: '3',
+    auxPowerBaseline: '100', impulseReactors: '24', emergencyGenerators: '8', emergencyPowerNotes: '6 Stardrive, 2 Saucer', rcsBaseline: '90', rcsThrusters: '20',
+    sysLifeSupport: '100', lifeSupportGenerators: '16', sysSensors: '90', scienceLabs: '70', sysTransporters: '90'
+  };
+}
+
+const STATE = loadState('ship-creation', { ships: [tempestShip()], editingId: 'ship-tempest', activeTab: 'identity' });
+function persist() { saveState('ship-creation', STATE); }
+let draft = (STATE.ships.find((s) => s.id === STATE.editingId) || blankShip());
+draft = JSON.parse(JSON.stringify(draft));
+// Ephemeral UI-only collapse state (not persisted)
+const UI = { collapsedDepts: {}, collapsedUnique: {}, collapsedDecks: {}, collapsedPower: {} };
+
+const CATEGORY_OPTIONS = ['Escape Pod', 'Shuttlepod', 'Personnel Shuttlecraft', 'Cargo Shuttlecraft', 'Work Bee', 'Workpod'];
+const DEPT_DEFS = [
+  { key: 'command', label: 'Command Staff' },
+  { key: 'engineeringDept', label: 'Engineering Department' },
+  { key: 'flightOpsDept', label: 'Flight Operations Department' },
+  { key: 'securityDept', label: 'Security Department' },
+  { key: 'medicalDept', label: 'Medical Department' },
+  { key: 'scienceDept', label: 'Science Department' }
+];
+
+function field(labelText, value, onChange, width) {
+  const input = el('input', { class: 'stab-input', type: 'text', value: value || '', style: 'width:100%;box-sizing:border-box;' });
+  input.addEventListener('change', (e) => onChange(e.target.value));
+  const wrap = el('div', { class: 'col' }, [el('label', { class: 'label' }, labelText), input]);
+  if (width) wrap.style.width = width;
+  return wrap;
+}
+
+function renderTabBar() {
+  const wrap = document.getElementById('tab-bar'); wrap.innerHTML = '';
+  TABS.forEach((t) => wrap.appendChild(el('button', { class: 'btn' + (STATE.activeTab === t.key ? ' btn-accent' : ''), onclick: () => { STATE.activeTab = t.key; persist(); renderTabBar(); renderTabContent(); } }, t.label)));
+}
+
+function renderDeptBlock(container, key, label, positions, onChangeCallback, collapsedStore) {
+  const total = positions.reduce((a, p) => a + (parseInt(p.count, 10) || 0), 0);
+  const isExpanded = collapsedStore[key] === undefined ? true : !collapsedStore[key];
+  const box = el('div', { style: 'border:1px solid #1c2938;border-radius:8px;background:#0f151a;padding:10px 14px;' });
+  box.appendChild(el('div', { style: 'cursor:pointer;font-size:13px;font-weight:600;', onclick: () => { collapsedStore[key] = isExpanded; renderTabContent(); } }, (isExpanded ? '\u25BE ' : '\u25B8 ') + label + ': ' + total));
+  if (isExpanded) {
+    const body = el('div', { style: 'margin-top:10px;padding-top:10px;border-top:1px solid #1c2938;' });
+    if (positions.length) {
+      const list = el('div', { class: 'col gap-6', style: 'margin-bottom:10px;' });
+      positions.forEach((p, i) => list.appendChild(el('div', { style: 'display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:6px 10px;background:#0b1015;border:1px solid #1c2938;border-radius:6px;' }, [
+        el('span', {}, p.name + ': ' + p.count),
+        el('button', { style: 'background:none;border:none;color:#566873;font-size:11px;cursor:pointer;', onclick: () => { positions.splice(i, 1); onChangeCallback(); renderTabContent(); } }, 'Remove')
+      ])));
+      body.appendChild(list);
+    }
+    const nameIn = el('input', { class: 'stab-input', style: 'flex-grow:1;font-size:12px;', type: 'text', placeholder: 'e.g. General Science Officers' });
+    const countIn = el('input', { class: 'stab-input', style: 'width:80px;font-size:12px;', type: 'text', placeholder: 'Count' });
+    body.appendChild(el('div', { class: 'row gap-6' }, [nameIn, countIn, el('button', { class: 'btn', onclick: () => {
+      const n = nameIn.value.trim(); if (!n) return;
+      positions.push({ name: n, count: countIn.value.trim() });
+      onChangeCallback(); renderTabContent();
+    } }, 'Add')]));
+    box.appendChild(body);
+  }
+  container.appendChild(box);
+}
+
+function renderIdentityTab(container) {
+  const row1 = el('div', { class: 'row gap-12 wrap', style: 'margin-bottom:14px;' });
+  row1.appendChild(field('Ship Name', draft.name, (v) => { draft.name = v; }, null)); row1.lastChild.classList.add('flex-grow'); row1.lastChild.style.minWidth = '200px';
+  row1.appendChild(field('Registry', draft.registry, (v) => { draft.registry = v; }, '160px'));
+  row1.appendChild(field('Class', draft.shipClass, (v) => { draft.shipClass = v; }, '180px'));
+  container.appendChild(row1);
+
+  const row2 = el('div', { class: 'row gap-12 wrap', style: 'margin-bottom:14px;' });
+  row2.appendChild(field('Shipyard', draft.shipyard, (v) => { draft.shipyard = v; }, null)); row2.lastChild.classList.add('flex-grow'); row2.lastChild.style.minWidth = '160px';
+  row2.appendChild(field('Commissioned', draft.commissioned, (v) => { draft.commissioned = v; }, '160px'));
+  container.appendChild(row2);
+
+  const row3 = el('div', { class: 'row gap-12 wrap', style: 'margin-bottom:14px;' });
+  row3.appendChild(field('Project Design Engineer', draft.designEngineer, (v) => { draft.designEngineer = v; }, null)); row3.lastChild.classList.add('flex-grow'); row3.lastChild.style.minWidth = '200px';
+  row3.appendChild(field('Ship Type', draft.shipType, (v) => { draft.shipType = v; }, '200px'));
+  container.appendChild(row3);
+
+  container.appendChild(el('div', { style: 'font-size:12px;font-weight:600;color:#9fb3c0;margin-bottom:8px;' }, 'Dimensions'));
+  const dimGrid = el('div', { class: 'grid g4', style: 'margin-bottom:16px;' });
+  dimGrid.appendChild(field('Decks', draft.decks, (v) => { draft.decks = v; }));
+  dimGrid.appendChild(field('Length (m)', draft.length, (v) => { draft.length = v; }));
+  dimGrid.appendChild(field('Height (m)', draft.height, (v) => { draft.height = v; }));
+  dimGrid.appendChild(field('Mass (metric tons)', draft.mass, (v) => { draft.mass = v; }));
+  container.appendChild(dimGrid);
+
+  container.appendChild(el('div', { style: 'font-size:12px;font-weight:600;color:#9fb3c0;margin-bottom:8px;' }, 'Ship History'));
+  if (draft.shipHistoryEntries.length) {
+    const list = el('div', { class: 'col gap-6', style: 'margin-bottom:10px;' });
+    draft.shipHistoryEntries.forEach((h, i) => list.appendChild(el('div', { style: 'display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:8px 10px;background:#0b1015;border:1px solid #1c2938;border-radius:6px;' }, [
+      el('span', {}, h.date ? [el('strong', {}, h.date + ': '), h.event] : h.event),
+      el('button', { style: 'background:none;border:none;color:#566873;font-size:12px;cursor:pointer;', onclick: () => { draft.shipHistoryEntries.splice(i, 1); renderTabContent(); } }, 'Remove')
+    ])));
+    container.appendChild(list);
+  }
+  const histDate = el('input', { class: 'stab-input', type: 'text', placeholder: 'e.g. 2363', style: 'width:120px;' });
+  const histEvent = el('input', { class: 'stab-input', type: 'text', placeholder: 'e.g. Commissioned at Utopia Planitia', style: 'flex-grow:1;' });
+  container.appendChild(el('div', { class: 'row gap-8', style: 'margin-bottom:16px;' }, [histDate, histEvent, el('button', { class: 'btn', onclick: () => {
+    const ev = histEvent.value.trim(); if (!ev) return;
+    draft.shipHistoryEntries.push({ date: histDate.value.trim(), event: ev });
+    renderTabContent();
+  } }, 'Add')]));
+
+  container.appendChild(el('div', { style: 'font-size:12px;font-weight:600;color:#9fb3c0;margin-bottom:8px;' }, 'Previous Commanding Officers'));
+  if (draft.previousCOs.length) {
+    const list = el('div', { class: 'col gap-6', style: 'margin-bottom:10px;' });
+    draft.previousCOs.forEach((co, i) => list.appendChild(el('div', { style: 'display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:8px 10px;background:#0b1015;border:1px solid #1c2938;border-radius:6px;' }, [
+      el('span', {}, co.name + (co.years ? ' (' + co.years + ')' : '')),
+      el('button', { style: 'background:none;border:none;color:#566873;font-size:12px;cursor:pointer;', onclick: () => { draft.previousCOs.splice(i, 1); renderTabContent(); } }, 'Remove')
+    ])));
+    container.appendChild(list);
+  }
+  const coName = el('input', { class: 'stab-input', type: 'text', placeholder: 'e.g. Capt. Alara Voss', style: 'flex-grow:1;' });
+  const coYears = el('input', { class: 'stab-input', type: 'text', placeholder: 'e.g. 2363-2370', style: 'width:140px;' });
+  container.appendChild(el('div', { class: 'row gap-8' }, [coName, coYears, el('button', { class: 'btn', onclick: () => {
+    const n = coName.value.trim(); if (!n) return;
+    draft.previousCOs.push({ name: n, years: coYears.value.trim() });
+    renderTabContent();
+  } }, 'Add')]));
+}
+
+function renderCrewTab(container) {
+  const grid = el('div', { class: 'grid g3', style: 'margin-bottom:16px;' });
+  grid.appendChild(field('Total Souls on Board', draft.totalSouls, (v) => { draft.totalSouls = v; }));
+  grid.appendChild(field('Standard Crew Complement', draft.standardCrew, (v) => { draft.standardCrew = v; }));
+  grid.appendChild(field('Current Crew Complement', draft.curCrew, (v) => { draft.curCrew = v; }));
+  grid.appendChild(field('Maximum Sustainable Life Support', draft.maxLifeSupport, (v) => { draft.maxLifeSupport = v; }));
+  container.appendChild(grid);
+
+  container.appendChild(el('div', { style: 'font-size:12px;font-weight:600;color:#9fb3c0;margin-bottom:8px;' }, 'Crew Breakdown by Category'));
+  container.appendChild(el('div', { class: 'tiny faint', style: 'margin-bottom:10px;' }, "Each department's total is the sum of its positions below."));
+  const deptWrap = el('div', { class: 'col gap-8', style: 'margin-bottom:16px;' });
+  DEPT_DEFS.forEach((d) => renderDeptBlock(deptWrap, d.key, d.label, draft.departments[d.key], () => {}, UI.collapsedDepts));
+  container.appendChild(deptWrap);
+
+  container.appendChild(el('div', { style: 'font-size:12px;font-weight:600;color:#9fb3c0;margin-bottom:8px;' }, 'Unique Departments'));
+  const udWrap = el('div', { class: 'col gap-8', style: 'margin-bottom:10px;' });
+  draft.uniqueDepartments.forEach((ud, udIdx) => {
+    const total = ud.positions.reduce((a, p) => a + (parseInt(p.count, 10) || 0), 0);
+    const isExpanded = UI.collapsedUnique[ud.id] === undefined ? true : !UI.collapsedUnique[ud.id];
+    const box = el('div', { style: 'border:1px solid #1c2938;border-radius:8px;background:#0f151a;padding:10px 14px;' });
+    box.appendChild(el('div', { class: 'row justify-between items-center' }, [
+      el('div', { style: 'cursor:pointer;font-size:13px;font-weight:600;', onclick: () => { UI.collapsedUnique[ud.id] = isExpanded; renderTabContent(); } }, (isExpanded ? '\u25BE ' : '\u25B8 ') + ud.name + ': ' + total),
+      el('button', { style: 'background:none;border:none;color:#566873;font-size:11px;cursor:pointer;', onclick: () => { draft.uniqueDepartments.splice(udIdx, 1); renderTabContent(); } }, 'Remove Department')
+    ]));
+    if (isExpanded) {
+      const body = el('div', { style: 'margin-top:10px;padding-top:10px;border-top:1px solid #1c2938;' });
+      if (ud.positions.length) {
+        const list = el('div', { class: 'col gap-6', style: 'margin-bottom:10px;' });
+        ud.positions.forEach((p, i) => list.appendChild(el('div', { style: 'display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:6px 10px;background:#0b1015;border:1px solid #1c2938;border-radius:6px;' }, [
+          el('span', {}, p.name + ': ' + p.count),
+          el('button', { style: 'background:none;border:none;color:#566873;font-size:11px;cursor:pointer;', onclick: () => { ud.positions.splice(i, 1); renderTabContent(); } }, 'Remove')
+        ])));
+        body.appendChild(list);
+      }
+      const nIn = el('input', { class: 'stab-input', style: 'flex-grow:1;font-size:12px;', type: 'text', placeholder: 'e.g. Marine Officers' });
+      const cIn = el('input', { class: 'stab-input', style: 'width:80px;font-size:12px;', type: 'text', placeholder: 'Count' });
+      body.appendChild(el('div', { class: 'row gap-6' }, [nIn, cIn, el('button', { class: 'btn', onclick: () => { const n = nIn.value.trim(); if (!n) return; ud.positions.push({ name: n, count: cIn.value.trim() }); renderTabContent(); } }, 'Add')]));
+      box.appendChild(body);
+    }
+    udWrap.appendChild(box);
+  });
+  container.appendChild(udWrap);
+  const newDeptName = el('input', { class: 'stab-input', type: 'text', placeholder: 'Add a unique department, e.g. Marine Company', style: 'flex-grow:1;' });
+  container.appendChild(el('div', { class: 'row gap-8', style: 'margin-bottom:16px;' }, [newDeptName, el('button', { class: 'btn', onclick: () => {
+    const n = newDeptName.value.trim(); if (!n) return;
+    draft.uniqueDepartments.push({ id: 'ud-' + Date.now(), name: n, positions: [] });
+    renderTabContent();
+  } }, 'Add Department')]));
+
+  container.appendChild(el('div', { style: 'font-size:12px;font-weight:600;color:#9fb3c0;margin-bottom:8px;' }, 'Civilians'));
+  const civWrap = el('div', {});
+  renderDeptBlock(civWrap, 'civilians', 'Civilians', draft.departments.civilians, () => {}, UI.collapsedDepts);
+  container.appendChild(civWrap);
+
+  container.appendChild(el('div', { class: 'tiny faint', style: 'margin-top:10px;' }, "Detailed department-by-department rosters are configured after creation via the ship's own consoles."));
+}
+
+function renderDefensiveTab(container) {
+  container.appendChild(el('div', { style: 'font-size:12px;font-weight:600;color:#9fb3c0;margin-bottom:8px;' }, 'Shields'));
+  const g1 = el('div', { class: 'grid g3', style: 'margin-bottom:8px;' });
+  g1.appendChild(field('Starting Baseline (%)', draft.sysShields, (v) => { draft.sysShields = v; }));
+  g1.appendChild(field('Shield Generators', draft.shieldGenerators, (v) => { draft.shieldGenerators = v; }));
+  g1.appendChild(field('Shield Zones', draft.shieldZones, (v) => { draft.shieldZones = v; }));
+  container.appendChild(g1);
+  container.appendChild(el('div', { class: 'tiny faint', style: 'margin-bottom:18px;' }, 'Per-zone allocation and individual generator health are managed later via the Engineering Console.'));
+
+  container.appendChild(el('div', { style: 'font-size:12px;font-weight:600;color:#9fb3c0;margin-bottom:8px;' }, 'Weapons'));
+  const g2 = el('div', { class: 'grid g3', style: 'margin-bottom:8px;' });
+  g2.appendChild(field('Starting Baseline (%)', draft.sysWeapons, (v) => { draft.sysWeapons = v; }));
+  g2.appendChild(field('Phaser Arrays', draft.phaserArrays, (v) => { draft.phaserArrays = v; }));
+  g2.appendChild(field('Torpedo Launchers', draft.torpedoLaunchers, (v) => { draft.torpedoLaunchers = v; }));
+  container.appendChild(g2);
+  container.appendChild(el('div', { class: 'tiny faint' }, 'Magazine contents, attack patterns, and power pool details are managed later via the Tactical Console.'));
+}
+
+function renderPowerCategoryBox(container, title, fieldsHtml) {
+  const box = el('div', { style: 'border:1px solid #1c2938;border-radius:8px;background:#0f151a;padding:12px 14px;margin-bottom:12px;' });
+  box.appendChild(el('div', { style: 'font-size:12px;font-weight:700;color:var(--accent);margin-bottom:8px;' }, title));
+  box.appendChild(fieldsHtml);
+  container.appendChild(box);
+}
+
+function renderPropulsionTab(container) {
+  container.appendChild(el('div', { style: 'font-size:12px;font-weight:700;color:var(--accent);margin-bottom:8px;' }, 'Main Power'));
+  const mpWrap = el('div', { class: 'col gap-8', style: 'margin-bottom:8px;' });
+  draft.mainPowerSources.forEach((mp, mpIdx) => {
+    const isExpanded = UI.collapsedPower[mp.id] === undefined ? true : !UI.collapsedPower[mp.id];
+    const box = el('div', { style: 'border:1px solid #1c2938;border-radius:8px;background:#0f151a;padding:12px 14px;' });
+    const nameInput = el('input', { class: 'stab-input', type: 'text', value: mp.name, style: 'display:inline-block;width:220px;font-size:12px;font-weight:700;padding:4px 8px;' });
+    nameInput.addEventListener('change', (e) => { mp.name = e.target.value; });
+    nameInput.addEventListener('click', (e) => e.stopPropagation());
+    const headLeft = el('div', { style: 'cursor:pointer;font-size:12px;font-weight:700;color:var(--accent);display:flex;align-items:center;gap:6px;', onclick: () => { UI.collapsedPower[mp.id] = isExpanded; renderTabContent(); } }, [(isExpanded ? '\u25BE' : '\u25B8'), nameInput]);
+    const head = el('div', { class: 'row justify-between items-center' }, [headLeft]);
+    if (draft.mainPowerSources.length > 1) head.appendChild(el('button', { style: 'background:none;border:none;color:#566873;font-size:11px;cursor:pointer;', onclick: () => { draft.mainPowerSources.splice(mpIdx, 1); renderTabContent(); } }, 'Remove Source'));
+    box.appendChild(head);
+    if (isExpanded) {
+      const body = el('div', { style: 'margin-top:10px;padding-top:10px;border-top:1px solid #1c2938;' });
+      const g = el('div', { class: 'grid g3', style: 'margin-bottom:12px;' });
+      g.appendChild(field('Starting Baseline (%)', mp.baseline, (v) => { mp.baseline = v; }));
+      g.appendChild(field('Max Warp', mp.maxWarp, (v) => { mp.maxWarp = v; }));
+      g.appendChild(field('Cruise Warp', mp.cruiseWarp, (v) => { mp.cruiseWarp = v; }));
+      g.appendChild(field('Reactor Type', mp.reactorType, (v) => { mp.reactorType = v; }));
+      g.appendChild(field('Reactor Make', mp.reactorMake, (v) => { mp.reactorMake = v; }));
+      g.appendChild(field('Reactor Model', mp.reactorModel, (v) => { mp.reactorModel = v; }));
+      g.appendChild(field('Fuel System', mp.fuelSystem, (v) => { mp.fuelSystem = v; }));
+      body.appendChild(g);
+      body.appendChild(el('div', { class: 'tiny dimmer', style: 'text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;' }, 'Unique Equipment'));
+      if (mp.equipment.length) {
+        const eqWrap = el('div', { style: 'display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;' });
+        mp.equipment.forEach((eq, i) => eqWrap.appendChild(el('div', { style: 'display:flex;align-items:center;gap:6px;font-size:12px;padding:5px 10px;background:#0b1015;border:1px solid #1c2938;border-radius:12px;' }, [el('span', {}, eq.name), el('button', { style: 'background:none;border:none;color:#566873;font-size:11px;cursor:pointer;', onclick: () => { mp.equipment.splice(i, 1); renderTabContent(); } }, '\u00d7')])));
+        body.appendChild(eqWrap);
+      }
+      const eqIn = el('input', { class: 'stab-input', style: 'flex-grow:1;font-size:12px;', type: 'text', placeholder: 'e.g. EPS Power Capacitors' });
+      body.appendChild(el('div', { class: 'row gap-6' }, [eqIn, el('button', { class: 'btn', onclick: () => { const n = eqIn.value.trim(); if (!n) return; mp.equipment.push({ name: n }); renderTabContent(); } }, 'Add')]));
+      box.appendChild(body);
+    }
+    mpWrap.appendChild(box);
+  });
+  container.appendChild(mpWrap);
+  container.appendChild(el('button', { class: 'btn', style: 'border-style:dashed;margin-bottom:16px;', onclick: () => {
+    draft.mainPowerSources.push({ id: 'mp-' + Date.now(), name: 'New Power Source', baseline: '', maxWarp: '', cruiseWarp: '', reactorType: '', reactorMake: '', reactorModel: '', fuelSystem: '', equipment: [] });
+    renderTabContent();
+  } }, '+ Add Main Power Source'));
+
+  const auxFields = el('div', { class: 'grid g2' });
+  auxFields.appendChild(field('Starting Baseline (%)', draft.auxPowerBaseline, (v) => { draft.auxPowerBaseline = v; }));
+  auxFields.appendChild(field('Impulse Reactors', draft.impulseReactors, (v) => { draft.impulseReactors = v; }));
+  renderPowerCategoryBox(container, 'Auxiliary Power (Impulse Drive)', auxFields);
+
+  const emFields = el('div', { class: 'grid g2' });
+  emFields.appendChild(field('Emergency Generators', draft.emergencyGenerators, (v) => { draft.emergencyGenerators = v; }));
+  emFields.appendChild(field('Notes', draft.emergencyPowerNotes, (v) => { draft.emergencyPowerNotes = v; }));
+  renderPowerCategoryBox(container, 'Emergency Power', emFields);
+
+  const rcsFields = el('div', { class: 'grid g2' });
+  rcsFields.appendChild(field('Starting Baseline (%)', draft.rcsBaseline, (v) => { draft.rcsBaseline = v; }));
+  rcsFields.appendChild(field('Thruster Packs', draft.rcsThrusters, (v) => { draft.rcsThrusters = v; }));
+  renderPowerCategoryBox(container, 'Reaction Control System', rcsFields);
+
+  container.appendChild(el('div', { class: 'tiny faint' }, 'Individual reactor, thruster, and warp-component status are managed later via the Engineering Console.'));
+}
+
+function renderLifeSupportTab(container) {
+  const g = el('div', { class: 'grid g2', style: 'margin-bottom:16px;' });
+  g.appendChild(field('Starting Baseline (%)', draft.sysLifeSupport, (v) => { draft.sysLifeSupport = v; }));
+  g.appendChild(field('Generators (per system: Gravity / SIF / IDF)', draft.lifeSupportGenerators, (v) => { draft.lifeSupportGenerators = v; }));
+  container.appendChild(g);
+  container.appendChild(el('div', { class: 'tiny faint' }, 'Individual generator status is managed later via the Engineering Console.'));
+}
+
+function renderSensorsTab(container) {
+  const g = el('div', { class: 'grid g3', style: 'margin-bottom:16px;' });
+  g.appendChild(field('Sensors Baseline (%)', draft.sysSensors, (v) => { draft.sysSensors = v; }));
+  g.appendChild(field('Science Labs', draft.scienceLabs, (v) => { draft.scienceLabs = v; }));
+  g.appendChild(field('Transporters Baseline (%)', draft.sysTransporters, (v) => { draft.sysTransporters = v; }));
+  container.appendChild(g);
+  container.appendChild(el('div', { class: 'tiny faint' }, 'Lab assignment and research projects are managed later via the Science Console.'));
+}
+
+function renderDecksTab(container) {
+  const count = parseInt(draft.decks, 10) || 0;
+  container.appendChild(el('div', { class: 'tiny faint', style: 'margin-bottom:10px;' }, 'Auto-populated from the Decks count on Identity & Dimensions (' + (count > 0 ? count + ' decks' : 'no deck count set') + ').'));
+  if (count === 0) { container.appendChild(el('div', { class: 'faint small' }, 'Set a Decks value on the Identity & Dimensions tab to populate this list.')); return; }
+  const wrap = el('div', { class: 'col gap-6' });
+  for (let i = 1; i <= count; i++) {
+    const key = String(i);
+    const data = draft.deckDataMap[key] || { rooms: [], equipment: [] };
+    const hasContent = (data.rooms || []).length > 0 || (data.equipment || []).length > 0;
+    const isExpanded = UI.collapsedDecks[key] === undefined ? hasContent : !UI.collapsedDecks[key];
+    const box = el('div', { style: 'border:1px solid #1c2938;border-radius:8px;background:#0f151a;padding:10px 14px;' });
+    box.appendChild(el('div', { style: 'cursor:pointer;font-size:13px;font-weight:600;', onclick: () => { UI.collapsedDecks[key] = isExpanded; renderTabContent(); } }, (isExpanded ? '\u25BE ' : '\u25B8 ') + 'Deck ' + i));
+    if (isExpanded) {
+      if (!draft.deckDataMap[key]) draft.deckDataMap[key] = { rooms: [], equipment: [] };
+      const dd = draft.deckDataMap[key];
+      const body = el('div', { style: 'margin-top:10px;padding-top:10px;border-top:1px solid #1c2938;' });
+      body.appendChild(el('div', { class: 'tiny dimmer', style: 'text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;' }, 'Rooms'));
+      if (dd.rooms.length) {
+        const rw = el('div', { style: 'display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;' });
+        dd.rooms.forEach((r, ri) => rw.appendChild(el('div', { style: 'display:flex;align-items:center;gap:6px;font-size:12px;padding:5px 10px;background:#0b1015;border:1px solid #1c2938;border-radius:12px;' }, [el('span', {}, r.name), el('button', { style: 'background:none;border:none;color:#566873;font-size:11px;cursor:pointer;', onclick: () => { dd.rooms.splice(ri, 1); renderTabContent(); } }, '\u00d7')])));
+        body.appendChild(rw);
+      }
+      const roomIn = el('input', { class: 'stab-input', style: 'flex-grow:1;font-size:12px;', type: 'text', placeholder: 'Add a unique room...' });
+      body.appendChild(el('div', { class: 'row gap-6', style: 'margin-bottom:12px;' }, [roomIn, el('button', { class: 'btn', onclick: () => { const n = roomIn.value.trim(); if (!n) return; dd.rooms.push({ name: n }); renderTabContent(); } }, 'Add')]));
+
+      body.appendChild(el('div', { class: 'tiny dimmer', style: 'text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;' }, 'Equipment'));
+      if (dd.equipment.length) {
+        const ew = el('div', { style: 'display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;' });
+        dd.equipment.forEach((eq, ei) => ew.appendChild(el('div', { style: 'display:flex;align-items:center;gap:6px;font-size:12px;padding:5px 10px;background:#0b1015;border:1px solid #1c2938;border-radius:12px;' }, [el('span', {}, eq.name), el('button', { style: 'background:none;border:none;color:#566873;font-size:11px;cursor:pointer;', onclick: () => { dd.equipment.splice(ei, 1); renderTabContent(); } }, '\u00d7')])));
+        body.appendChild(ew);
+      }
+      const eqIn = el('input', { class: 'stab-input', style: 'flex-grow:1;font-size:12px;', type: 'text', placeholder: 'Add unique equipment...' });
+      body.appendChild(el('div', { class: 'row gap-6' }, [eqIn, el('button', { class: 'btn', onclick: () => { const n = eqIn.value.trim(); if (!n) return; dd.equipment.push({ name: n }); renderTabContent(); } }, 'Add')]));
+      box.appendChild(body);
+    }
+    wrap.appendChild(box);
+  }
+  container.appendChild(wrap);
+}
+
+function renderSupportCraftTab(container) {
+  container.appendChild(el('div', { class: 'small dim', style: 'margin-bottom:14px;' }, "Shuttles, runabouts, and other support craft are defined and managed on their own screen, not as part of this ship record."));
+  container.appendChild(el('a', { class: 'link-btn', href: 'support-craft-creation.html' }, 'Open Support Craft Creation \u2192'));
+}
+
+function renderTabContent() {
+  document.getElementById('editor-heading').textContent = STATE.ships.some((s) => s.id === STATE.editingId) ? 'EDIT SHIP RECORD' : 'NEW SHIP RECORD';
+  document.getElementById('save-btn').textContent = STATE.ships.some((s) => s.id === STATE.editingId) ? 'Save Changes' : 'Create Ship';
+  document.getElementById('delete-btn').style.display = STATE.ships.some((s) => s.id === STATE.editingId) ? 'inline-block' : 'none';
+  const c = document.getElementById('tab-content'); c.innerHTML = '';
+  if (STATE.activeTab === 'identity') renderIdentityTab(c);
+  else if (STATE.activeTab === 'crew') renderCrewTab(c);
+  else if (STATE.activeTab === 'defensive') renderDefensiveTab(c);
+  else if (STATE.activeTab === 'propulsion') renderPropulsionTab(c);
+  else if (STATE.activeTab === 'lifesupport') renderLifeSupportTab(c);
+  else if (STATE.activeTab === 'sensors') renderSensorsTab(c);
+  else if (STATE.activeTab === 'decks') renderDecksTab(c);
+  else if (STATE.activeTab === 'supportcraft') renderSupportCraftTab(c);
+}
+
+function renderShipList() {
+  const wrap = document.getElementById('ship-list'); wrap.innerHTML = '';
+  STATE.ships.forEach((s) => wrap.appendChild(el('div', { style: 'cursor:pointer;border:1px solid ' + (STATE.editingId === s.id ? 'var(--accent)' : '#1c2938') + ';border-radius:8px;padding:12px;background:#0f151a;', onclick: () => { STATE.editingId = s.id; draft = JSON.parse(JSON.stringify(s)); persist(); renderAll(); } }, [
+    el('div', { style: 'font-size:13px;font-weight:600;' }, s.name),
+    el('div', { class: 'tiny dim' }, s.registry + ' \u00b7 ' + s.shipClass)
+  ])));
+}
+
+document.getElementById('new-ship-btn').addEventListener('click', () => { STATE.editingId = null; draft = blankShip(); STATE.activeTab = 'identity'; persist(); renderAll(); });
+document.getElementById('save-btn').addEventListener('click', () => {
+  const name = (draft.name || '').trim();
+  if (!name) return;
+  const isEditing = STATE.ships.some((s) => s.id === STATE.editingId);
+  if (isEditing) {
+    STATE.ships = STATE.ships.map((s) => s.id === STATE.editingId ? { ...JSON.parse(JSON.stringify(draft)), id: s.id } : s);
+  } else {
+    const newShip = { ...JSON.parse(JSON.stringify(draft)), id: 'ship-' + Date.now() };
+    STATE.ships.push(newShip);
+    STATE.editingId = newShip.id;
+    draft = JSON.parse(JSON.stringify(newShip));
+  }
+  persist(); renderAll();
+});
+document.getElementById('delete-btn').addEventListener('click', () => {
+  STATE.ships = STATE.ships.filter((s) => s.id !== STATE.editingId);
+  const next = STATE.ships[0] || null;
+  STATE.editingId = next ? next.id : null;
+  draft = next ? JSON.parse(JSON.stringify(next)) : blankShip();
+  persist(); renderAll();
+});
+
+function renderAll() { renderTabBar(); renderTabContent(); renderShipList(); }
+renderAll();
+</script>
+</body>
+</html>

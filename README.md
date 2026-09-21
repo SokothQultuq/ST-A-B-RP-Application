@@ -13,12 +13,22 @@ for this domain, or open it in a private/incognito window.
 ## Pages
 
 - `index.html` — landing page with links to everything below
+- `login.html` — Login/Homepage (Discord sign-in simulation, ship/station selection, character create/edit)
 - `character-sheet.html` — Character Sheet (Character Description, Family History, Starfleet Academy/Service/Medical Records)
-- `character-screen.html` — Character Screen (location, health status, inventory, equipment-gated tools)
+- `character-screen.html` — Character Screen (location, health status, inventory, equipment-gated tools, Messages inbox)
 - `engineering.html` — Engineering Console (system status, shields, reactors, life support, RCS, Damage Control)
 - `tactical.html` — Tactical Console (shields, phasers, torpedoes, tactical plot, comms, transporter)
-- `gd-console.html` — Game Director Console (tabbed hub: quick-control panels + links to full consoles, player roster, NPC ships)
-- `npc-ships.html` — NPC Ship Template Library (build templates, manage the active encounter)
+- `medical.html` — Medical Console (personnel pool, wards/beds, patient admission, Mass Casualty)
+- `navigation.html` — Navigation Console (staged Warp/Impulse/Thruster orders with a master Engage, sensor display)
+- `science.html` — Science Console (personnel pool, labs, research projects, sensor analysis)
+- `security.html` — Security Console (armory, security alerts, Internal Sensors breach panel, Brig)
+- `gd-console.html` — Game Director Console (tabbed hub: quick-control panels + links to full consoles, Casualty Generator, Quick Generate NPC)
+- `npc-ships.html` — NPC Ship Template Library (build/edit templates; active-roster management lives in Inventory)
+- `inventory.html` — Consolidated Inventory (Active NPC Ships + Support Craft Status)
+- `ship-creation.html` — Player Ship Creation (8 tabs: Identity & Dimensions, Crew Demographics, Defensive Systems, Power & Propulsion, Life Support, Sensors & Transporters, Deck By Deck Layout, Support Craft)
+- `support-craft-creation.html` — Support Craft Creation (fleet-level types + individually named vessels with supply inventory)
+
+Every page except Login shares a bottom "Ship Chat" box (a placeholder for the eventual Discord integration).
 
 ## Deploying to GitHub Pages
 

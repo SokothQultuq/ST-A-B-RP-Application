@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Science — STAB Demo</title>
+<link rel="stylesheet" href="style.css">
+<script src="utils.js"></script>
+</head>
+<body>
+<div class="app-frame">
+  <div class="nav-links">
+    <a href="index.html">&larr; Demo Home</a>
+    <a href="character-screen.html">Character Screen</a>
+    <a href="engineering.html">Engineering</a>
+    <a href="gd-console.html">GD Console</a>
+  </div>
+  <div class="top-bar">
+    <div><div class="eyebrow">Science Console</div><div class="title" style="font-size:20px;">USS Tempest &middot; Labs &amp; Sensors</div></div>
+    <div class="row gap-8" id="alert-buttons"></div>
+  </div>
+  <div class="divider"></div>
+
+  <div class="grid" style="grid-template-columns: 300px 1fr; gap:14px; flex-grow:1; min-height:0;">
+    <div class="col gap-12" style="overflow:auto;">
+      <div class="panel"><div class="panel-h">SCIENCE PERSONNEL</div><div id="personnel-list" class="col gap-6" style="max-height:180px;overflow:auto;"></div></div>
+      <div class="panel" style="flex-grow:1;overflow:auto;"><div class="panel-h">SCIENCE LABS</div><div id="lab-list" class="col gap-6"></div></div>
+    </div>
+    <div class="col gap-12" style="overflow:auto;">
+      <div class="panel">
+        <div class="panel-h">START RESEARCH PROJECT</div>
+        <div class="row items-end gap-8 wrap" style="margin-bottom:10px;">
+          <div class="col flex-grow" style="min-width:180px;"><label class="label">Project</label><input id="proj-name" type="text" placeholder="e.g. Anomaly Composition Analysis"></div>
+          <div class="col" style="width:170px;"><label class="label">Lab</label><select id="proj-lab"></select></div>
+        </div>
+        <div class="row items-end gap-8 wrap">
+          <div class="col flex-grow" style="min-width:180px;"><label class="label">Personnel Type</label><select id="proj-staff-type"></select></div>
+          <div class="col" style="width:90px;"><label class="label">Count</label><input id="proj-staff-count" type="text" value="2"></div>
+          <button class="btn btn-accent" id="start-project-btn">Start Project</button>
+        </div>
+      </div>
+      <div class="panel" style="flex-grow:1;overflow:auto;"><div class="panel-h">ACTIVE PROJECTS</div><div id="project-list" class="col gap-10"></div></div>
+      <div class="panel">
+        <div class="panel-h">SENSOR ANALYSIS</div>
+        <div id="sensor-obj-list" class="col gap-6" style="margin-bottom:10px;"></div>
+        <div id="scan-actions" style="display:none;">
+          <button class="btn btn-accent" id="deep-scan-btn">Run Deep Scan</button>
+          <div id="scan-result" class="small dim" style="margin-top:8px;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="chat-box" id="ship-chat"></div>
+</div>
+
+<script>
+const BASE_ACCENT = '#4a9eff';
+const STATE = loadState('science', {
+  alertLevel: 'normal',
+  personnelPool: {
+    generalScience: { label: 'General Science Officers', total: 54, allocated: 0 },
+    geologists: { label: 'Geologists', total: 9, allocated: 0 },
+    entomologists: { label: 'Entomologists', total: 13, allocated: 0 },
+    zoologists: { label: 'Zoologists', total: 14, allocated: 0 },
+    biologists: { label: 'Biologists', total: 18, allocated: 0 },
+    astronomers: { label: 'Astronomers', total: 20, allocated: 0 },
+    theologists: { label: 'Theologists', total: 8, allocated: 0 },
+    marineBiologists: { label: 'Marine Biologists', total: 6, allocated: 0 },
+    anthropologists: { label: 'Anthropologists', total: 6, allocated: 0 },
+    historians: { label: 'Historians', total: 8, allocated: 0 },
+    molecularBiologists: { label: 'Molecular Biologists', total: 22, allocated: 0 },
+    meteorologists: { label: 'Meteorologists', total: 12, allocated: 0 },
+    astrophysicists: { label: 'Astrophysicists', total: 48, allocated: 0 },
+    holographicSpecialists: { label: 'Holographic Specialists', total: 6, allocated: 0 }
+  },
+  labs: {
+    general: { label: 'General Purpose Lab', total: 22, inUse: 0 },
+    geology: { label: 'Geology Lab', total: 5, inUse: 0 },
+    astrometric: { label: 'Astrometric Lab', total: 4, inUse: 0 },
+    lifeScience: { label: 'Life Science Lab', total: 4, inUse: 0 },
+    bioChem: { label: 'Bio-Chem Lab', total: 6, inUse: 0 },
+    archology: { label: 'Archology Lab', total: 3, inUse: 0 },
+    physics: { label: 'Physics Lab', total: 8, inUse: 0 },
+    eugenics: { label: 'Eugenics Lab', total: 3, inUse: 0 },
+    planetaryDev: { label: 'Planetary Development Lab', total: 4, inUse: 0 },
+    holographics: { label: 'Holographics Lab', total: 2, inUse: 0 },
+    hydroponics: { label: 'Hydroponics Lab', total: 5, inUse: 0 },
+    highEnergy: { label: 'High-Energy Physics Lab', total: 4, inUse: 0 }
+  },
+  projects: [],
+  sensorObjects: [{ id: 'so-1', type: 'celestial', label: 'Pacifica' }, { id: 'so-2', type: 'obstacle', label: 'Debris Field' }],
+  selectedObjId: null,
+  shipChatLog: [
+    { from: 'GD', text: 'Long-range sensors picking up an anomaly.' },
+    { from: 'Ens. Ohin', text: 'Running a deep scan now.' }
+  ]
+});
+function persist() { saveState('science', STATE); }
+function applyTheme() { applyAlertTheme(STATE.alertLevel, BASE_ACCENT); }
+const OBJECT_TYPES = { celestial: { label: 'Celestial Body', color: '#ffc63d' }, ship: { label: 'Ship', color: '#5ec8d8' }, obstacle: { label: 'Obstacle', color: '#e05d5d' } };
+
+function renderAlertButtons() {
+  const wrap = document.getElementById('alert-buttons'); wrap.innerHTML = '';
+  ['normal', 'yellow', 'red'].forEach((lvl) => {
+    const labels = { normal: 'Normal', yellow: 'Yellow Alert', red: 'Red Alert' };
+    wrap.appendChild(el('button', { class: 'btn' + (STATE.alertLevel === lvl ? ' btn-accent' : ''), onclick: () => { STATE.alertLevel = lvl; persist(); applyTheme(); renderAlertButtons(); } }, labels[lvl]));
+  });
+}
+function renderPersonnel() {
+  const wrap = document.getElementById('personnel-list'); wrap.innerHTML = '';
+  Object.values(STATE.personnelPool).forEach((p) => {
+    const free = p.total - p.allocated;
+    wrap.appendChild(el('div', { style: 'border-bottom:1px solid var(--panel-border);padding-bottom:5px;' }, [
+      el('div', { class: 'tiny', style: 'color:#c3d0d8;' }, p.label),
+      el('div', { class: 'tiny dimmer' }, ['Total ' + p.total + ' \u00b7 Allocated ' + p.allocated + ' \u00b7 ', el('span', { style: 'color:' + (free > 0 ? '#7fb069' : '#e05d5d') + ';' }, 'Free ' + free)])
+    ]));
+  });
+}
+function renderLabs() {
+  const wrap = document.getElementById('lab-list'); wrap.innerHTML = '';
+  Object.values(STATE.labs).forEach((l) => {
+    const free = l.total - l.inUse;
+    wrap.appendChild(el('div', { style: 'border-bottom:1px solid var(--panel-border);padding-bottom:5px;' }, [
+      el('div', { class: 'tiny', style: 'color:#c3d0d8;' }, l.label),
+      el('div', { class: 'tiny dimmer' }, ['Total ' + l.total + ' \u00b7 In Use ' + l.inUse + ' \u00b7 ', el('span', { style: 'color:' + (free > 0 ? '#7fb069' : '#e05d5d') + ';' }, 'Free ' + free)])
+    ]));
+  });
+}
+function renderProjectForm() {
+  const labSel = document.getElementById('proj-lab'); labSel.innerHTML = '';
+  Object.entries(STATE.labs).forEach(([k, l]) => { if (l.total - l.inUse > 0) labSel.appendChild(el('option', { value: k }, l.label + ' (' + (l.total - l.inUse) + ' free)')); });
+  const typeSel = document.getElementById('proj-staff-type'); typeSel.innerHTML = '';
+  Object.entries(STATE.personnelPool).forEach(([k, p]) => typeSel.appendChild(el('option', { value: k }, p.label + ' (' + (p.total - p.allocated) + ' free)')));
+}
+document.getElementById('start-project-btn').addEventListener('click', () => {
+  const name = document.getElementById('proj-name').value.trim();
+  if (!name) return;
+  const labKey = document.getElementById('proj-lab').value;
+  const staffKey = document.getElementById('proj-staff-type').value;
+  const n = Math.max(1, parseInt(document.getElementById('proj-staff-count').value, 10) || 1);
+  const lab = STATE.labs[labKey]; if (!lab || lab.inUse >= lab.total) return;
+  const pers = STATE.personnelPool[staffKey]; const free = pers.total - pers.allocated;
+  const actual = Math.min(n, free); if (actual <= 0) return;
+  lab.inUse += 1; pers.allocated += actual;
+  const eta = Math.round((20 / (1 + 0.2 * actual)) * 10) / 10;
+  STATE.projects.push({ id: 'proj-' + Date.now(), name: name, labKey: labKey, labLabel: lab.label, staffTypeKey: staffKey, staffCount: actual, staffLabel: actual + 'x ' + pers.label, etaHours: eta });
+  document.getElementById('proj-name').value = '';
+  persist(); renderAll();
+});
+function renderProjects() {
+  const wrap = document.getElementById('project-list'); wrap.innerHTML = '';
+  if (!STATE.projects.length) { wrap.appendChild(el('div', { class: 'faint small' }, 'No active research projects.')); return; }
+  STATE.projects.forEach((pr) => {
+    wrap.appendChild(el('div', { class: 'card' }, [
+      el('div', { class: 'row justify-between items-start' }, [
+        el('div', {}, [el('div', { style: 'font-weight:600;' }, pr.name), el('div', { class: 'tiny dim' }, pr.labLabel + ' \u00b7 ' + pr.staffLabel), el('div', { class: 'small', style: 'color:var(--accent);margin-top:2px;' }, 'Est. completion: ' + pr.etaHours + ' hrs')]),
+        el('button', { class: 'btn btn-sm', onclick: () => {
+          const entry = STATE.personnelPool[pr.staffTypeKey]; if (entry) entry.allocated = Math.max(0, entry.allocated - pr.staffCount);
+          const lab = STATE.labs[pr.labKey]; if (lab) lab.inUse = Math.max(0, lab.inUse - 1);
+          STATE.projects = STATE.projects.filter((x) => x.id !== pr.id);
+          persist(); renderAll();
+        } }, 'Complete')
+      ])
+    ]));
+  });
+}
+function renderSensor() {
+  const wrap = document.getElementById('sensor-obj-list'); wrap.innerHTML = '';
+  STATE.sensorObjects.forEach((o) => {
+    const def = OBJECT_TYPES[o.type];
+    wrap.appendChild(el('div', { style: 'padding:6px 10px;border-radius:6px;border:1px solid ' + (STATE.selectedObjId === o.id ? 'var(--accent)' : '#1c2938') + ';background:#0f151a;cursor:pointer;', onclick: () => { STATE.selectedObjId = o.id; document.getElementById('scan-result').textContent = ''; persist(); renderSensor(); } }, [el('div', { style: 'font-size:12px;color:' + def.color + ';' }, def.label + ': ' + o.label)]));
+  });
+  const sel = STATE.sensorObjects.find((o) => o.id === STATE.selectedObjId);
+  document.getElementById('scan-actions').style.display = sel ? 'block' : 'none';
+  if (sel) document.getElementById('deep-scan-btn').onclick = () => { document.getElementById('scan-result').textContent = 'Deep scan of ' + sel.label + ' complete. Composition and structural data logged to the science database.'; };
+}
+
+function renderAll() {
+  renderAlertButtons(); renderPersonnel(); renderLabs(); renderProjectForm(); renderProjects(); renderSensor();
+  renderShipChat(document.getElementById('ship-chat'), () => STATE.shipChatLog, (text) => { STATE.shipChatLog.push({ from: 'You', text: text }); persist(); });
+}
+applyTheme(); renderAll();
+</script>
+</body>
+</html>

@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Support Craft Creation — STAB Demo</title>
+<link rel="stylesheet" href="style.css">
+<script src="utils.js"></script>
+</head>
+<body>
+<div class="app-frame">
+  <div class="nav-links">
+    <a href="index.html">&larr; Demo Home</a>
+    <a href="ship-creation.html">Player Ship Creation</a>
+    <a href="inventory.html">Inventory</a>
+    <a href="gd-console.html">GD Console</a>
+  </div>
+  <div class="top-bar"><div><div class="eyebrow">GD / Command Tools</div><div class="title" style="font-size:20px;">Support Craft Creation</div></div></div>
+  <div class="divider"></div>
+
+  <div class="grid" style="grid-template-columns: 1fr 340px; gap:16px; flex-grow:1; min-height:0;">
+    <div class="panel" style="overflow:auto;">
+      <div class="panel-h" id="editor-heading"></div>
+      <div id="editor-body"></div>
+      <div class="row gap-8" style="margin-top:14px;">
+        <button class="btn btn-accent" id="save-btn"></button>
+        <button class="btn btn-danger" id="delete-btn" style="display:none;">Delete</button>
+      </div>
+    </div>
+    <div class="col gap-10">
+      <button class="btn" style="border-style:dashed;" id="new-fleet-btn">+ New Fleet Type</button>
+      <button class="btn" style="border-style:dashed;" id="new-individual-btn">+ New Individual Vessel</button>
+      <div class="panel" style="flex-grow:1;overflow:auto;">
+        <div class="panel-h">SUPPORT CRAFT</div>
+        <div class="tiny dimmer" style="text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Fleet Types</div>
+        <div id="fleet-craft-list" class="col gap-6" style="margin-bottom:14px;"></div>
+        <div class="tiny dimmer" style="text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Individual Vessels</div>
+        <div id="individual-craft-list" class="col gap-6"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const CATEGORY_OPTIONS = ['Escape Pod', 'Shuttlepod', 'Personnel Shuttlecraft', 'Cargo Shuttlecraft', 'Work Bee', 'Workpod'];
+const DEFAULT_CRAFT = [
+  { id: 'c-1', kind: 'fleet', typeName: 'A.S.R.V. Escape Pod (6-person)', category: 'Escape Pod', quantity: '440' },
+  { id: 'c-2', kind: 'fleet', typeName: 'Type-18 Shuttlepod', category: 'Shuttlepod', quantity: '6' },
+  { id: 'c-3', kind: 'fleet', typeName: 'Type-8 Personnel Shuttlecraft', category: 'Personnel Shuttlecraft', quantity: '4' },
+  { id: 'c-4', kind: 'fleet', typeName: 'Type-9 Personnel Shuttlecraft', category: 'Personnel Shuttlecraft', quantity: '2' },
+  { id: 'c-5', kind: 'fleet', typeName: 'Type-10 Personnel Shuttlecraft (Uprated)', category: 'Personnel Shuttlecraft', quantity: '4' },
+  { id: 'c-6', kind: 'fleet', typeName: 'Type-9A Cargo Shuttlecraft (Uprated)', category: 'Cargo Shuttlecraft', quantity: '2' },
+  { id: 'c-7', kind: 'fleet', typeName: 'Work Bee', category: 'Work Bee', quantity: '3' },
+  { id: 'c-8', kind: 'fleet', typeName: 'Type-M1 Sphinx Workpod', category: 'Workpod', quantity: '2' },
+  { id: 'c-9', kind: 'individual', name: 'USS Urania', registry: 'NCC-92707', className: 'Danabe-class Runabout', configuration: 'Living Quarters', supplyInventory: [{ item: 'Phaser Type I', qty: 2 }, { item: 'Medical Kit', qty: 1 }] },
+  { id: 'c-10', kind: 'individual', name: 'USS Dauntless', registry: 'NCC-92708', className: 'Danabe-class Runabout', configuration: 'Living Quarters', supplyInventory: [{ item: 'Phaser Type I', qty: 2 }, { item: 'Medical Kit', qty: 1 }] },
+  { id: 'c-11', kind: 'individual', name: 'USS Aruna', registry: 'NCC-92709', className: 'Danabe-class Runabout', configuration: 'Unconfigured', supplyInventory: [] },
+  { id: 'c-12', kind: 'individual', name: 'USS Kevin Spaceshipy', registry: 'NCC-92712', className: 'Danabe-class Runabout', configuration: 'Unconfigured', supplyInventory: [] },
+  { id: 'c-13', kind: 'individual', name: 'USS Mandrake', registry: 'NCC-75418', className: "Captain's Yacht", configuration: 'Standard', supplyInventory: [{ item: 'Phaser Type I', qty: 2 }] }
+];
+const STATE = loadState('support-craft', { craft: DEFAULT_CRAFT, editingId: DEFAULT_CRAFT[0].id });
+function persist() { saveState('support-craft', STATE); }
+function blankFleet() { return { id: null, kind: 'fleet', typeName: '', category: CATEGORY_OPTIONS[0], quantity: '' }; }
+function blankIndividual() { return { id: null, kind: 'individual', name: '', registry: '', className: '', configuration: '', supplyInventory: [] }; }
+let draft = STATE.craft.find((c) => c.id === STATE.editingId) ? { ...STATE.craft.find((c) => c.id === STATE.editingId) } : blankFleet();
+
+document.getElementById('new-fleet-btn').addEventListener('click', () => { STATE.editingId = null; draft = blankFleet(); persist(); renderAll(); });
+document.getElementById('new-individual-btn').addEventListener('click', () => { STATE.editingId = null; draft = blankIndividual(); persist(); renderAll(); });
+
+function renderLists() {
+  const fleetWrap = document.getElementById('fleet-craft-list'); fleetWrap.innerHTML = '';
+  STATE.craft.filter((c) => c.kind === 'fleet').forEach((c) => {
+    fleetWrap.appendChild(el('div', { style: 'cursor:pointer;border:1px solid ' + (STATE.editingId === c.id ? 'var(--accent)' : '#1c2938') + ';border-radius:6px;padding:10px;background:#0f151a;', onclick: () => { STATE.editingId = c.id; draft = { ...c }; persist(); renderAll(); } }, [
+      el('div', { style: 'font-size:12px;font-weight:600;' }, c.typeName),
+      el('div', { class: 'tiny dim' }, c.category + ' \u00b7 Qty ' + c.quantity)
+    ]));
+  });
+  const indWrap = document.getElementById('individual-craft-list'); indWrap.innerHTML = '';
+  STATE.craft.filter((c) => c.kind === 'individual').forEach((c) => {
+    indWrap.appendChild(el('div', { style: 'cursor:pointer;border:1px solid ' + (STATE.editingId === c.id ? 'var(--accent)' : '#1c2938') + ';border-radius:6px;padding:10px;background:#0f151a;', onclick: () => { STATE.editingId = c.id; draft = { ...c }; persist(); renderAll(); } }, [
+      el('div', { style: 'font-size:12px;font-weight:600;' }, c.name),
+      el('div', { class: 'tiny dim' }, c.registry + ' \u00b7 ' + c.className)
+    ]));
+  });
+}
+
+function renderEditor() {
+  const isEditing = STATE.craft.some((c) => c.id === STATE.editingId);
+  const isFleet = draft.kind !== 'individual';
+  document.getElementById('editor-heading').textContent = (isEditing ? 'EDIT ' : 'NEW ') + (isFleet ? 'FLEET TYPE' : 'INDIVIDUAL VESSEL');
+  document.getElementById('save-btn').textContent = isEditing ? 'Save Changes' : 'Add Support Craft';
+  document.getElementById('delete-btn').style.display = isEditing ? 'inline-block' : 'none';
+
+  const body = document.getElementById('editor-body'); body.innerHTML = '';
+  if (isFleet) {
+    body.appendChild(el('div', { class: 'tiny faint', style: 'margin-bottom:14px;' }, 'Fleet-level type \u2014 tracked as a type + quantity, not individually named.'));
+    const row = el('div', { class: 'row gap-12 wrap', style: 'margin-bottom:14px;' });
+    const nameIn = el('input', { class: 'stab-input', type: 'text', placeholder: 'e.g. Type-8 Shuttlecraft', value: draft.typeName || '', style: 'flex-grow:1;min-width:220px;' });
+    nameIn.addEventListener('change', (e) => { draft.typeName = e.target.value; });
+    const catSel = el('select', { class: 'stab-input', style: 'width:220px;' });
+    CATEGORY_OPTIONS.forEach((c) => catSel.appendChild(el('option', { value: c }, c)));
+    catSel.value = draft.category || CATEGORY_OPTIONS[0];
+    catSel.addEventListener('change', (e) => { draft.category = e.target.value; });
+    const qtyIn = el('input', { class: 'stab-input', type: 'text', value: draft.quantity || '', style: 'width:120px;' });
+    qtyIn.addEventListener('change', (e) => { draft.quantity = e.target.value; });
+    row.appendChild(el('div', { class: 'col flex-grow' }, [el('label', { class: 'label' }, 'Type Name'), nameIn]));
+    row.appendChild(el('div', { class: 'col', style: 'width:220px;' }, [el('label', { class: 'label' }, 'Category'), catSel]));
+    row.appendChild(el('div', { class: 'col', style: 'width:120px;' }, [el('label', { class: 'label' }, 'Quantity'), qtyIn]));
+    body.appendChild(row);
+  } else {
+    body.appendChild(el('div', { class: 'tiny faint', style: 'margin-bottom:14px;' }, "Individually named & registered vessel (e.g. runabouts, the Captain's Yacht)."));
+    const row = el('div', { class: 'row gap-12 wrap', style: 'margin-bottom:14px;' });
+    const nameIn = el('input', { class: 'stab-input', type: 'text', placeholder: 'e.g. USS Urania', value: draft.name || '', style: 'flex-grow:1;min-width:200px;' });
+    nameIn.addEventListener('change', (e) => { draft.name = e.target.value; });
+    const regIn = el('input', { class: 'stab-input', type: 'text', placeholder: 'e.g. NCC-92707', value: draft.registry || '', style: 'width:160px;' });
+    regIn.addEventListener('change', (e) => { draft.registry = e.target.value; });
+    const classIn = el('input', { class: 'stab-input', type: 'text', placeholder: 'e.g. Danabe-class Runabout', value: draft.className || '', style: 'width:200px;' });
+    classIn.addEventListener('change', (e) => { draft.className = e.target.value; });
+    row.appendChild(el('div', { class: 'col flex-grow' }, [el('label', { class: 'label' }, 'Name'), nameIn]));
+    row.appendChild(el('div', { class: 'col', style: 'width:160px;' }, [el('label', { class: 'label' }, 'Registry'), regIn]));
+    row.appendChild(el('div', { class: 'col', style: 'width:200px;' }, [el('label', { class: 'label' }, 'Class'), classIn]));
+    body.appendChild(row);
+
+    const configIn = el('input', { class: 'stab-input', type: 'text', placeholder: 'e.g. Living Quarters', value: draft.configuration || '', style: 'width:220px;' });
+    configIn.addEventListener('change', (e) => { draft.configuration = e.target.value; });
+    body.appendChild(el('div', { class: 'col', style: 'width:220px;margin-bottom:16px;' }, [el('label', { class: 'label' }, 'Configuration'), configIn]));
+
+    body.appendChild(el('div', { style: 'font-size:12px;font-weight:600;color:#9fb3c0;margin-bottom:8px;' }, 'On-Board Supply Inventory (limited)'));
+    const supplyList = draft.supplyInventory || [];
+    if (supplyList.length) {
+      const listWrap = el('div', { class: 'col gap-6', style: 'margin-bottom:10px;' });
+      supplyList.forEach((si, i) => listWrap.appendChild(el('div', { style: 'display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:8px 10px;background:#0b1015;border:1px solid #1c2938;border-radius:6px;' }, [
+        el('span', {}, si.item + ': ' + si.qty),
+        el('button', { style: 'background:none;border:none;color:#566873;font-size:12px;cursor:pointer;', onclick: () => { draft.supplyInventory.splice(i, 1); renderEditor(); } }, 'Remove')
+      ])));
+      body.appendChild(listWrap);
+    }
+    const addRow = el('div', { class: 'row gap-8', style: 'margin-bottom:18px;' });
+    const itemIn = el('input', { class: 'stab-input', type: 'text', placeholder: 'e.g. Phaser Type I', style: 'flex-grow:1;' });
+    const qtyIn2 = el('input', { class: 'stab-input', type: 'text', placeholder: 'Qty', style: 'width:80px;' });
+    addRow.appendChild(itemIn); addRow.appendChild(qtyIn2);
+    addRow.appendChild(el('button', { class: 'btn', onclick: () => {
+      const item = itemIn.value.trim(); if (!item) return;
+      const qty = parseInt(qtyIn2.value, 10) || 1;
+      draft.supplyInventory = [...(draft.supplyInventory || []), { item: item, qty: qty }];
+      renderEditor();
+    } }, 'Add'));
+    body.appendChild(addRow);
+  }
+}
+
+document.getElementById('save-btn').addEventListener('click', () => {
+  const isFleet = draft.kind !== 'individual';
+  const nameCheck = isFleet ? (draft.typeName || '').trim() : (draft.name || '').trim();
+  if (!nameCheck) return;
+  const isEditing = STATE.craft.some((c) => c.id === STATE.editingId);
+  if (isEditing) {
+    STATE.craft = STATE.craft.map((c) => c.id === STATE.editingId ? { ...c, ...draft, id: c.id } : c);
+  } else {
+    const newCraft = { ...draft, id: 'c-' + Date.now() };
+    STATE.craft.push(newCraft);
+    STATE.editingId = newCraft.id;
+    draft = { ...newCraft };
+  }
+  persist(); renderAll();
+});
+document.getElementById('delete-btn').addEventListener('click', () => {
+  STATE.craft = STATE.craft.filter((c) => c.id !== STATE.editingId);
+  const next = STATE.craft[0] || null;
+  STATE.editingId = next ? next.id : null;
+  draft = next ? { ...next } : blankFleet();
+  persist(); renderAll();
+});
+
+function renderAll() { renderEditor(); renderLists(); }
+renderAll();
+</script>
+</body>
+</html>

@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Inventory — STAB Demo</title>
+<link rel="stylesheet" href="style.css">
+<script src="utils.js"></script>
+</head>
+<body>
+<div class="app-frame">
+  <div class="nav-links">
+    <a href="index.html">&larr; Demo Home</a>
+    <a href="npc-ships.html">NPC Ship Library</a>
+    <a href="support-craft-creation.html">Support Craft Creation</a>
+    <a href="gd-console.html">GD Console</a>
+  </div>
+  <div class="top-bar">
+    <div><div class="eyebrow">GD Tools</div><div class="title" style="font-size:20px;">Consolidated Inventory</div></div>
+    <div class="row gap-8" id="alert-buttons"></div>
+  </div>
+  <div class="divider"></div>
+
+  <div class="grid" style="grid-template-columns: 1fr 1fr; gap:14px; flex-grow:1; min-height:0;">
+    <div class="panel" style="overflow:auto;display:flex;flex-direction:column;">
+      <div class="row justify-between items-center" style="margin-bottom:12px;">
+        <div class="panel-h" style="margin-bottom:0;">ACTIVE NPC SHIPS</div>
+        <a class="btn" style="text-decoration:none;" href="npc-ships.html">Manage Templates &rarr;</a>
+      </div>
+      <div class="row items-end gap-8" style="margin-bottom:16px;padding:14px;border:1px solid var(--panel-border);border-radius:8px;background:var(--panel-bg);">
+        <div class="col flex-grow"><label class="label">Add Ship From Templates</label><select id="template-select"></select></div>
+        <button class="btn btn-accent" id="add-template-btn">Add to Encounter</button>
+      </div>
+      <div id="npc-list" class="col gap-10" style="overflow:auto;"></div>
+    </div>
+    <div class="panel" style="overflow:auto;display:flex;flex-direction:column;">
+      <div class="row justify-between items-center" style="margin-bottom:12px;">
+        <div class="panel-h" style="margin-bottom:0;">SUPPORT CRAFT STATUS</div>
+        <a class="btn" style="text-decoration:none;" href="support-craft-creation.html">Manage Records &rarr;</a>
+      </div>
+      <div class="tiny dimmer" style="text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Fleet Types</div>
+      <div id="fleet-list" class="col gap-3" style="margin-bottom:16px;"></div>
+      <div class="tiny dimmer" style="text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Individual Vessels</div>
+      <div id="individual-list" class="col gap-10" style="overflow:auto;"></div>
+    </div>
+  </div>
+
+  <div class="chat-box" id="ship-chat"></div>
+</div>
+
+<script>
+const BASE_ACCENT = '#4a9eff';
+const TEMPLATE_OPTIONS = [
+  { id: 'tpl-kbop', name: 'Klingon Bird-of-Prey', origin: 'Klingon', className: "B'rel-class", lifeSigns: '12', sysShields: '75', sysWeapons: '80', sysEngines: '85', sysSensors: '70' },
+  { id: 'tpl-ferm', name: 'Ferengi Marauder', origin: 'Ferengi', className: "D'Kora-class", lifeSigns: '60', sysShields: '60', sysWeapons: '55', sysEngines: '65', sysSensors: '75' }
+];
+const DAMAGE_TARGETS = ['Shields', 'Weapons', 'Engines', 'Sensors', 'Life Signs'];
+const DAMAGE_FIELD_MAP = { Shields: 'sysShields', Weapons: 'sysWeapons', Engines: 'sysEngines', Sensors: 'sysSensors', 'Life Signs': 'lifeSigns' };
+
+const STATE = loadState('inventory', {
+  alertLevel: 'normal',
+  templateDraft: TEMPLATE_OPTIONS[0].id,
+  npcInstances: [{ id: 'inv-inst-1', designation: 'Hunter Vessel Alpha', origin: 'Klingon', className: "B'rel-class Bird-of-Prey", lifeSigns: '12', sysShields: '75', sysWeapons: '80', sysEngines: '85', sysSensors: '70', damageLog: [] }],
+  fleetCraft: [
+    { typeName: 'A.S.R.V. Escape Pod (6-person)', quantity: '440' }, { typeName: 'Type-18 Shuttlepod', quantity: '6' },
+    { typeName: 'Type-8 Personnel Shuttlecraft', quantity: '4' }, { typeName: 'Type-9 Personnel Shuttlecraft', quantity: '2' },
+    { typeName: 'Type-10 Personnel Shuttlecraft (Uprated)', quantity: '4' }, { typeName: 'Type-9A Cargo Shuttlecraft (Uprated)', quantity: '2' },
+    { typeName: 'Work Bee', quantity: '3' }, { typeName: 'Type-M1 Sphinx Workpod', quantity: '2' }
+  ],
+  individualCraft: [
+    { id: 'ic-1', name: 'USS Urania', registry: 'NCC-92707', className: 'Danabe-class Runabout', status: 'Docked', notes: [] },
+    { id: 'ic-2', name: 'USS Dauntless', registry: 'NCC-92708', className: 'Danabe-class Runabout', status: 'Docked', notes: [] },
+    { id: 'ic-3', name: 'USS Mandrake', registry: 'NCC-75418', className: "Captain's Yacht", status: 'Docked', notes: [] }
+  ],
+  craftNoteDrafts: {},
+  shipChatLog: [{ from: 'GD', text: 'Tracking two active contacts and a runabout out on patrol.' }]
+});
+function persist() { saveState('inventory', STATE); }
+function applyTheme() { applyAlertTheme(STATE.alertLevel, BASE_ACCENT); }
+function statusColor2(pct) { const n = parseFloat(pct); if (isNaN(n)) return '#9fb3c0'; return n >= 80 ? '#7fb069' : n >= 50 ? '#e8a33d' : '#e05d5d'; }
+
+function renderAlertButtons() {
+  const wrap = document.getElementById('alert-buttons'); wrap.innerHTML = '';
+  ['normal', 'yellow', 'red'].forEach((lvl) => {
+    const labels = { normal: 'Normal', yellow: 'Yellow Alert', red: 'Red Alert' };
+    wrap.appendChild(el('button', { class: 'btn' + (STATE.alertLevel === lvl ? ' btn-accent' : ''), onclick: () => { STATE.alertLevel = lvl; persist(); applyTheme(); renderAlertButtons(); } }, labels[lvl]));
+  });
+}
+
+function renderTemplateSelect() {
+  const sel = document.getElementById('template-select'); sel.innerHTML = '';
+  TEMPLATE_OPTIONS.forEach((t) => sel.appendChild(el('option', { value: t.id }, t.name + ' (' + t.origin + ')')));
+  sel.value = STATE.templateDraft;
+  sel.onchange = (e) => { STATE.templateDraft = e.target.value; persist(); };
+}
+document.getElementById('add-template-btn').addEventListener('click', () => {
+  const tpl = TEMPLATE_OPTIONS.find((t) => t.id === STATE.templateDraft) || TEMPLATE_OPTIONS[0];
+  STATE.npcInstances.push({ id: 'inv-inst-' + Date.now(), designation: tpl.name, origin: tpl.origin, className: tpl.className, lifeSigns: tpl.lifeSigns, sysShields: tpl.sysShields, sysWeapons: tpl.sysWeapons, sysEngines: tpl.sysEngines, sysSensors: tpl.sysSensors, damageLog: [] });
+  persist(); renderNpcList();
+});
+
+function renderNpcList() {
+  const wrap = document.getElementById('npc-list'); wrap.innerHTML = '';
+  if (!STATE.npcInstances.length) { wrap.appendChild(el('div', { class: 'faint small' }, 'No active NPC ships \u2014 add one from the Templates above.')); return; }
+  STATE.npcInstances.forEach((inst) => {
+    const card = el('div', { class: 'card' });
+    const head = el('div', { class: 'row justify-between items-start gap-8' });
+    const left = el('div', { style: 'flex-grow:1;' });
+    const nameInput = el('input', { class: 'stab-input', type: 'text', value: inst.designation, style: 'font-weight:600;margin-bottom:6px;width:100%;' });
+    nameInput.addEventListener('change', (e) => { inst.designation = e.target.value; persist(); });
+    left.appendChild(nameInput);
+    left.appendChild(el('div', { class: 'tiny dim' }, inst.origin + ' \u00b7 ' + inst.className + ' \u00b7 Life Signs: ' + inst.lifeSigns));
+    left.appendChild(el('div', { class: 'tiny dimmer', style: 'margin-top:4px;' }, [
+      'Shields ', el('span', { style: 'color:' + statusColor2(inst.sysShields) + ';' }, inst.sysShields + '%'), ' \u00b7 Weapons ', el('span', { style: 'color:' + statusColor2(inst.sysWeapons) + ';' }, inst.sysWeapons + '%'),
+      ' \u00b7 Engines ', el('span', { style: 'color:' + statusColor2(inst.sysEngines) + ';' }, inst.sysEngines + '%'), ' \u00b7 Sensors ', el('span', { style: 'color:' + statusColor2(inst.sysSensors) + ';' }, inst.sysSensors + '%')
+    ]));
+    if (inst.damageLog.length) { const lw = el('div', { style: 'margin-top:8px;' }); inst.damageLog.forEach((t) => lw.appendChild(el('div', { class: 'tiny', style: 'color:#e8a33d;' }, '\u2022 ' + t))); left.appendChild(lw); }
+    if (inst.dispatchOpen) {
+      const form = el('div', { class: 'row items-end gap-8 wrap', style: 'margin-top:10px;padding-top:10px;border-top:1px solid var(--panel-border);' });
+      const targetSel = el('select', { class: 'stab-input', style: 'width:130px;' });
+      DAMAGE_TARGETS.forEach((t) => targetSel.appendChild(el('option', { value: t }, t)));
+      const amountIn = el('input', { class: 'stab-input', type: 'text', style: 'width:90px;' });
+      form.appendChild(el('div', { class: 'col' }, [el('label', { class: 'label' }, 'System'), targetSel]));
+      form.appendChild(el('div', { class: 'col' }, [el('label', { class: 'label' }, 'Amount'), amountIn]));
+      form.appendChild(el('button', { class: 'btn btn-accent', onclick: () => {
+        const amt = parseFloat(amountIn.value); if (isNaN(amt) || amt === 0) { inst.dispatchOpen = false; renderNpcList(); return; }
+        const field = DAMAGE_FIELD_MAP[targetSel.value];
+        const cur = parseFloat(inst[field]) || 0; const isPct = field !== 'lifeSigns';
+        const next = isPct ? clamp(cur - amt, 0, 100) : Math.max(0, cur - amt);
+        inst[field] = String(next);
+        inst.damageLog.push(targetSel.value + ' -' + amt + (isPct ? '% ' : ' ') + '(now ' + next + (isPct ? '%' : '') + ')');
+        inst.dispatchOpen = false; persist(); renderNpcList();
+      } }, 'Apply'));
+      left.appendChild(form);
+    }
+    head.appendChild(left);
+    const btns = el('div', { class: 'col gap-6' });
+    btns.appendChild(el('button', { style: 'padding:6px 12px;border-radius:6px;border:1px solid #e8a33d;background:#e8a33d1f;color:#e8a33d;font-family:"IBM Plex Sans",sans-serif;font-size:11px;font-weight:600;cursor:pointer;', onclick: () => { inst.dispatchOpen = !inst.dispatchOpen; renderNpcList(); } }, 'Log Damage'));
+    btns.appendChild(el('button', { class: 'btn btn-sm', onclick: () => { STATE.npcInstances = STATE.npcInstances.filter((x) => x.id !== inst.id); persist(); renderNpcList(); } }, 'Retire'));
+    head.appendChild(btns);
+    card.appendChild(head);
+    wrap.appendChild(card);
+  });
+}
+
+function renderFleetCraft() {
+  const wrap = document.getElementById('fleet-list'); wrap.innerHTML = '';
+  STATE.fleetCraft.forEach((f) => wrap.appendChild(el('div', { class: 'small dim' }, f.typeName + ': ' + f.quantity)));
+}
+function renderIndividualCraft() {
+  const wrap = document.getElementById('individual-list'); wrap.innerHTML = '';
+  STATE.individualCraft.forEach((v) => {
+    const card = el('div', { class: 'card' });
+    const head = el('div', { class: 'row justify-between items-start gap-8' });
+    head.appendChild(el('div', {}, [el('div', { style: 'font-weight:600;' }, v.name), el('div', { class: 'tiny dim' }, v.registry + ' \u00b7 ' + v.className)]));
+    const statusSel = el('select', { class: 'stab-input', style: 'width:110px;font-size:11px;padding:6px 8px;' });
+    ['Docked', 'Deployed', 'Away'].forEach((s) => statusSel.appendChild(el('option', { value: s }, s)));
+    statusSel.value = v.status;
+    statusSel.onchange = (e) => { v.status = e.target.value; persist(); };
+    head.appendChild(statusSel);
+    card.appendChild(head);
+    if (v.notes.length) { const nw = el('div', { style: 'margin-top:8px;' }); v.notes.forEach((n) => nw.appendChild(el('div', { class: 'tiny', style: 'color:#e8a33d;' }, '\u2022 ' + n))); card.appendChild(nw); }
+    const noteRow = el('div', { class: 'row gap-6', style: 'margin-top:8px;' });
+    const noteInput = el('input', { class: 'stab-input', type: 'text', placeholder: 'Log an incident/note...', style: 'flex-grow:1;font-size:11px;padding:6px 8px;' });
+    noteInput.value = STATE.craftNoteDrafts[v.id] || '';
+    noteInput.addEventListener('change', (e) => { STATE.craftNoteDrafts[v.id] = e.target.value; persist(); });
+    noteRow.appendChild(noteInput);
+    noteRow.appendChild(el('button', { class: 'btn btn-sm', onclick: () => {
+      const text = (STATE.craftNoteDrafts[v.id] || '').trim(); if (!text) return;
+      v.notes.push(text); STATE.craftNoteDrafts[v.id] = ''; persist(); renderIndividualCraft();
+    } }, 'Add'));
+    card.appendChild(noteRow);
+    wrap.appendChild(card);
+  });
+}
+
+function renderAll() {
+  renderAlertButtons(); renderTemplateSelect(); renderNpcList(); renderFleetCraft(); renderIndividualCraft();
+  renderShipChat(document.getElementById('ship-chat'), () => STATE.shipChatLog, (text) => { STATE.shipChatLog.push({ from: 'You', text: text }); persist(); });
+}
+applyTheme(); renderAll();
+</script>
+</body>
+</html>

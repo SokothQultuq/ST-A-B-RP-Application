@@ -40,11 +40,18 @@
       <div class="panel"><div class="panel-h">ENGINEERING POOL</div><div id="engineer-pool" class="col gap-8"></div></div>
     </div>
   </div>
+
+  <div class="chat-box" id="ship-chat"></div>
 </div>
 
 <script>
 const BASE_ACCENT = '#4a9eff';
 const STATE = loadState('engineering', {
+  shipChatLog: [
+    { from: 'GD', text: 'Repairs continue across the ship.' },
+    { from: 'Lt. Cmdr. Ferro', text: 'Watch the plasma relays on deck 12.' },
+    { from: 'CPO Reyes', text: 'Copy, keeping an eye on it.' }
+  ],
   alertLevel: 'normal', viewMode: 'status', selectedSystem: 'shields',
   shieldAllocation: { forward: 100, starboard: 100, port: 100, dorsal: 100, aft: 100, ventral: 100 },
   shieldGenerators: {
@@ -414,6 +421,7 @@ function renderEngineerPool() {
 }
 
 function renderView() {
+  renderShipChat(document.getElementById('ship-chat'), () => STATE.shipChatLog, (text) => { STATE.shipChatLog.push({ from: 'You', text: text }); persist(); });
   document.getElementById('status-view').style.display = STATE.viewMode==='status'?'block':'none';
   document.getElementById('damage-view').style.display = STATE.viewMode==='damage'?'block':'none';
   renderModeButtons();

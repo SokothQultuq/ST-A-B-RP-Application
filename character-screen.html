@@ -71,6 +71,18 @@
       <div class="panel" style="flex-grow:1; min-height:260px;" id="tool-panel"></div>
     </div>
   </div>
+
+  <div class="chat-box" id="ship-chat"></div>
+</div>
+
+<div class="modal-backdrop" id="messages-backdrop" style="display:none;">
+  <div class="modal-box">
+    <div class="row justify-between items-center" style="margin-bottom:16px;">
+      <div style="font-family:'Orbitron',sans-serif; font-size:16px; color:var(--accent);">MESSAGES</div>
+      <button id="messages-close" style="background:none;border:none;color:#9fb3c0;font-size:18px;cursor:pointer;">&times;</button>
+    </div>
+    <div id="messages-list" style="display:flex;flex-direction:column;gap:10px;overflow:auto;flex-grow:1;"></div>
+  </div>
 </div>
 
 <script>
@@ -79,7 +91,17 @@ const STATE = loadState('character-screen', {
   mode: 'ship', deck: null, room: null,
   healthStatus: 'Nominal', healthDetail: '',
   inventory: [], itemDraft: null,
-  activeTool: null, commTarget: null, commSent: false, intercomMessage: '', intercomSent: false
+  activeTool: null, commTarget: null, commSent: false, intercomMessage: '', intercomSent: false,
+  shipChatLog: [
+    { from: 'GD', text: 'Scene resumes on the bridge as repairs continue.' },
+    { from: 'Lt. Cmdr. Ferro', text: 'Engineering reports warp core stable.' },
+    { from: 'Ens. Ohin', text: 'Picking up something odd on long-range sensors...' }
+  ],
+  messages: [
+    { id: 'msg-1', channel: 'messaging', from: 'Lt. Cmdr. Dael Ferro', preview: 'Need you down in Engineering when you have a sec.', body: 'Whenever you get a chance, could you swing by Main Engineering? Nothing urgent, just want a second set of eyes on the plasma relay readings.', unread: true },
+    { id: 'msg-2', channel: 'communicator', from: 'Lt. Marcus Kade', preview: '[Voice hail — transcript]', body: "Kade to you — just checking in, we're holding position near the debris field. Let me know if Tactical needs anything from Security.", unread: true },
+    { id: 'msg-3', channel: 'internal-comms', from: 'Bridge (Shipwide)', preview: 'All hands, stand by for a briefing at 1800 hours.', body: 'This is the Bridge. All department heads, please report to the briefing room at 1800 hours for a mission update. That is all.', unread: false }
+  ]
 });
 function persist() { saveState('character-screen', STATE); }
 
@@ -162,6 +184,8 @@ function renderTools() {
   if (hasTricorder) btnWrap.appendChild(el('button', { class: 'btn' + (STATE.activeTool === 'tricorder' ? ' btn-accent' : ''), onclick: () => { STATE.activeTool = 'tricorder'; persist(); render(); } }, 'Tricorder'));
   if (hasComm) btnWrap.appendChild(el('button', { class: 'btn' + (STATE.activeTool === 'communicator' ? ' btn-accent' : ''), onclick: () => { STATE.activeTool = 'communicator'; STATE.commSent = false; persist(); render(); } }, 'Communicator'));
   btnWrap.appendChild(el('button', { class: 'btn' + (STATE.activeTool === 'intercom' ? ' btn-accent' : ''), onclick: () => { STATE.activeTool = 'intercom'; STATE.intercomSent = false; persist(); render(); } }, 'Intercom'));
+  const unreadCount = STATE.messages.filter((m) => m.unread).length;
+  btnWrap.appendChild(el('button', { class: 'btn' + (unreadCount > 0 ? '' : ''), style: unreadCount > 0 ? 'border-color:#e8a33d;background:#e8a33d1f;color:#eaf6f8;font-weight:700;' : '', onclick: openMessages }, 'Messages' + (unreadCount > 0 ? ' (' + unreadCount + ')' : '')));
 
   const panel = document.getElementById('tool-panel');
   panel.innerHTML = '';
@@ -188,6 +212,45 @@ function renderTools() {
     panel.appendChild(el('button', { class: 'btn btn-accent', style: 'margin-top:8px;', onclick: () => { STATE.intercomSent = true; persist(); render(); } }, 'Broadcast'));
     if (STATE.intercomSent) panel.appendChild(el('div', { class: 'tiny', style: 'color:var(--accent); margin-top:8px;' }, 'Broadcast sent shipwide.'));
   }
+  renderShipChat(document.getElementById('ship-chat'), () => STATE.shipChatLog, (text) => { STATE.shipChatLog.push({ from: 'You', text: text }); persist(); });
+}
+
+const CHANNEL_LABELS = { 'internal-comms': 'Internal Comms (Voice)', 'messaging': 'Internal Messaging (Text)', 'communicator': 'Communicator (Personal)' };
+function openMessages() {
+  document.getElementById('messages-backdrop').style.display = 'flex';
+  renderMessagesList();
+}
+function closeMessages() { document.getElementById('messages-backdrop').style.display = 'none'; render(); }
+document.getElementById('messages-close').addEventListener('click', closeMessages);
+document.getElementById('messages-backdrop').addEventListener('click', (e) => { if (e.target.id === 'messages-backdrop') closeMessages(); });
+
+function renderMessagesList() {
+  const list = document.getElementById('messages-list');
+  list.innerHTML = '';
+  STATE.messages.forEach((m) => {
+    const card = el('div', { style: 'border:1px solid #1c252d;border-radius:8px;padding:14px 16px;background:#0b1015;cursor:pointer;' });
+    const head = el('div', { class: 'row justify-between items-center' });
+    const left = el('div', { class: 'row gap-8 items-center' });
+    if (m.unread) left.appendChild(el('span', { style: 'width:7px;height:7px;border-radius:50%;background:var(--accent);display:inline-block;' }));
+    left.appendChild(el('span', { style: 'font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#6b7d89;' }, CHANNEL_LABELS[m.channel] || m.channel));
+    head.appendChild(left);
+    head.appendChild(el('span', { style: 'font-size:11px;color:#566873;' }, ''));
+    card.appendChild(head);
+    card.appendChild(el('div', { style: 'font-size:14px;font-weight:600;margin-top:4px;' }, m.from));
+    card.appendChild(el('div', { style: 'font-size:13px;color:#9fb3c0;margin-top:2px;' }, m.preview));
+    card.onclick = () => { m.expanded = !m.expanded; if (m.expanded) m.unread = false; persist(); renderMessagesList(); render(); };
+    if (m.expanded) {
+      card.appendChild(el('div', { style: 'margin-top:10px;padding-top:10px;border-top:1px solid #1c252d;font-size:13px;color:#c3d0d8;line-height:1.5;' }, m.body));
+      const replyRow = el('div', { style: 'display:flex;gap:8px;margin-top:10px;' });
+      const input = el('input', { class: 'stab-input', type: 'text', placeholder: 'Reply...', style: 'flex-grow:1;' });
+      input.addEventListener('click', (e) => e.stopPropagation());
+      const sendBtn = el('button', { style: 'padding:8px 14px;border-radius:6px;border:1px solid var(--accent);background:var(--accent-wash);color:#eaf6f8;font-family:"IBM Plex Sans",sans-serif;font-size:12px;font-weight:600;cursor:pointer;', onclick: (e) => { e.stopPropagation(); m.replySent = true; renderMessagesList(); } }, 'Send');
+      replyRow.appendChild(input); replyRow.appendChild(sendBtn);
+      card.appendChild(replyRow);
+      if (m.replySent) card.appendChild(el('div', { style: 'font-size:11px;color:var(--accent);margin-top:6px;' }, 'Reply sent.'));
+    }
+    list.appendChild(card);
+  });
 }
 
 render();

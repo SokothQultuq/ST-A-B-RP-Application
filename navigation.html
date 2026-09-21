@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Navigation — STAB Demo</title>
+<link rel="stylesheet" href="style.css">
+<script src="utils.js"></script>
+</head>
+<body>
+<div class="app-frame">
+  <div class="nav-links">
+    <a href="index.html">&larr; Demo Home</a>
+    <a href="character-screen.html">Character Screen</a>
+    <a href="engineering.html">Engineering</a>
+    <a href="tactical.html">Tactical</a>
+    <a href="gd-console.html">GD Console</a>
+  </div>
+  <div class="top-bar">
+    <div>
+      <div class="eyebrow">Navigation / Helm Console</div>
+      <div class="title" style="font-size:20px;">USS Tempest &middot; Engines &amp; Sensors</div>
+    </div>
+    <div class="row gap-8" id="alert-buttons"></div>
+  </div>
+  <div class="divider"></div>
+
+  <div class="grid" style="grid-template-columns: 320px 1fr; gap:16px; flex-grow:1; min-height:0;">
+    <div class="col gap-14" style="overflow:auto;">
+      <div class="panel">
+        <div class="panel-h">ENGINE STATUS</div>
+        <div id="engine-status" class="small dim"></div>
+      </div>
+      <div class="panel"><div class="panel-h">WARP DRIVE</div><div class="col"><label class="label">Warp Factor</label><select id="warp-select"></select></div></div>
+      <div class="panel"><div class="panel-h">IMPULSE DRIVE</div><div class="row gap-6 wrap" id="impulse-buttons"></div></div>
+      <div class="panel">
+        <div class="panel-h">THRUSTERS</div>
+        <div class="col"><label class="label">Speed (KPH)</label><input id="thruster-input" type="text"></div>
+        <div id="override-wrap" style="display:none;">
+          <button class="btn" id="override-btn" style="width:100%;margin-top:8px;"></button>
+          <div class="tiny faint" style="margin-top:6px;">Thrusters stop automatically while Impulse is engaged. Override allows a small extra push on top of it.</div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-h">COURSE</div>
+        <div class="col" style="margin-bottom:8px;"><label class="label">Destination</label><input id="course-input" type="text" placeholder="e.g. Pacifica"></div>
+        <div id="course-locked" class="tiny" style="color:var(--accent);"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-h" style="margin-bottom:6px;">PENDING ORDER</div>
+        <div id="pending-summary" class="small dim" style="margin-bottom:10px;"></div>
+        <button id="engage-btn" style="width:100%;padding:14px;border-radius:6px;border:2px solid var(--accent);background:var(--accent-wash);color:#eaf6f8;font-family:'Orbitron',sans-serif;font-size:15px;font-weight:700;letter-spacing:0.05em;cursor:pointer;">ENGAGE</button>
+        <div class="row gap-8" style="margin-top:10px;">
+          <button class="btn btn-danger" style="flex:1;" id="all-stop-btn">All Stop</button>
+          <button class="btn" style="flex:1;" id="station-keeping-btn">Station Keeping</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="col gap-14" style="overflow:auto;">
+      <div class="panel" style="flex-grow:1;display:flex;flex-direction:column;">
+        <div class="panel-h">SENSOR DISPLAY</div>
+        <div class="row gap-14" style="flex-grow:1;min-height:0;">
+          <div style="position:relative;width:320px;height:320px;flex-shrink:0;border:1px solid #2a3541;border-radius:6px;background:#0b1015;overflow:hidden;" id="sensor-grid">
+            <div style="position:absolute;inset:0;border-radius:50%;border:1px solid #1c2938;margin:15%;"></div>
+            <div style="position:absolute;inset:0;border-radius:50%;border:1px solid #1c2938;margin:30%;"></div>
+            <div style="position:absolute;inset:0;border-radius:50%;border:1px solid #1c2938;margin:45%;"></div>
+            <svg style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;" viewBox="0 0 100 100" preserveAspectRatio="none"><polyline id="waypoint-line" points="" fill="none" stroke="var(--accent)" stroke-width="0.5" stroke-dasharray="2,1"></polyline></svg>
+            <div style="position:absolute;top:50%;left:50%;width:8px;height:8px;border-radius:50%;background:var(--accent);transform:translate(-50%,-50%);"></div>
+            <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,8px);font-size:8px;color:var(--accent);">OWN SHIP</div>
+            <div id="sensor-markers"></div>
+            <div id="waypoint-markers"></div>
+          </div>
+          <div class="col gap-8" style="flex-grow:1;min-width:0;">
+            <div class="tiny faint">Objects are placed by the GD. Select one below to set a course or scan it.</div>
+            <div class="col gap-6" id="sensor-object-list" style="max-height:130px;overflow:auto;"></div>
+            <div id="object-actions" style="display:none;">
+              <div class="row gap-8">
+                <button class="btn btn-sm btn-accent" id="set-course-btn">Set Course to This</button>
+                <button class="btn btn-sm" id="scan-btn">Scan</button>
+              </div>
+              <div id="scan-result" class="tiny" style="color:var(--accent);margin-top:6px;"></div>
+            </div>
+            <div style="border-top:1px solid var(--panel-border);padding-top:10px;margin-top:4px;">
+              <div class="tiny dimmer" style="text-transform:uppercase;letter-spacing:0.07em;margin-bottom:6px;">Plot Course</div>
+              <div class="row gap-8">
+                <button class="btn btn-sm" id="plot-mode-btn">Plot Course</button>
+                <button class="btn btn-sm" id="clear-waypoints-btn">Clear Waypoints</button>
+              </div>
+              <div class="tiny faint" style="margin-top:6px;">Waypoints are a visual planning aid — clicking the display while plotting adds a point; they don't move the ship on their own.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="chat-box" id="ship-chat"></div>
+</div>
+
+<script>
+const BASE_ACCENT = '#4a9eff';
+const STATE = loadState('navigation', {
+  alertLevel: 'normal',
+  warpFactor: null, impulseSetting: null, thrusterSpeed: 0, stationKeeping: false, courseTarget: null,
+  draftMode: null, draftWarpFactor: 1, draftImpulseSetting: null, draftThrusterSpeed: '0', draftCourse: '',
+  thrusterOverride: false,
+  sensorObjects: [
+    { id: 'so-1', type: 'celestial', label: 'Pacifica', left: 70, top: 30 },
+    { id: 'so-2', type: 'obstacle', label: 'Debris Field', left: 30, top: 68 }
+  ],
+  selectedObjId: null, plotMode: false, waypoints: [],
+  shipChatLog: [
+    { from: 'GD', text: 'Course looks clear ahead.' },
+    { from: "Cmdr. T'Lira Vash", text: 'Proceed at your discretion, Helm.' }
+  ]
+});
+function persist() { saveState('navigation', STATE); }
+function applyTheme() { applyAlertTheme(STATE.alertLevel, BASE_ACCENT); }
+const OBJECT_TYPES = { celestial: { label: 'Celestial Body', color: '#ffc63d' }, ship: { label: 'Ship', color: '#5ec8d8' }, obstacle: { label: 'Obstacle', color: '#e05d5d' } };
+const IMPULSE_OPTS = ['1/4 Impulse', '1/2 Impulse', '3/4 Impulse', 'Full Impulse'];
+
+function renderAlertButtons() {
+  const wrap = document.getElementById('alert-buttons'); wrap.innerHTML = '';
+  ['normal', 'yellow', 'red'].forEach((lvl) => {
+    const labels = { normal: 'Normal', yellow: 'Yellow Alert', red: 'Red Alert' };
+    wrap.appendChild(el('button', { class: 'btn' + (STATE.alertLevel === lvl ? ' btn-accent' : ''), onclick: () => { STATE.alertLevel = lvl; persist(); applyTheme(); renderAlertButtons(); } }, labels[lvl]));
+  });
+}
+
+function renderEngineStatus() {
+  const underPower = !!STATE.warpFactor || !!STATE.impulseSetting || STATE.thrusterSpeed > 0;
+  let driftLabel, driftColor;
+  if (underPower) { driftLabel = 'Under Power'; driftColor = '#7fb069'; }
+  else if (STATE.stationKeeping) { driftLabel = 'Holding Position (Station Keeping)'; driftColor = '#5ec8d8'; }
+  else { driftLabel = 'Drifting'; driftColor = '#e8a33d'; }
+  const box = document.getElementById('engine-status');
+  box.innerHTML = '';
+  box.appendChild(el('div', {}, ['Warp: ', el('span', { style: 'color:var(--accent);' }, STATE.warpFactor ? ('Warp ' + STATE.warpFactor) : 'Not Engaged')]));
+  box.appendChild(el('div', { style: 'margin-top:4px;' }, ['Impulse: ', el('span', { style: 'color:var(--accent);' }, STATE.impulseSetting || 'Not Engaged')]));
+  const thrusterNote = STATE.impulseSetting && STATE.thrusterSpeed > 0 ? ' (Override)' : STATE.impulseSetting && STATE.thrusterSpeed === 0 ? ' (Stopped — Impulse Engaged)' : '';
+  box.appendChild(el('div', { style: 'margin-top:4px;' }, ['Thrusters: ', el('span', { style: 'color:var(--accent);' }, STATE.thrusterSpeed + ' KPH' + thrusterNote)]));
+  box.appendChild(el('div', { style: 'margin-top:8px;padding-top:8px;border-top:1px solid var(--panel-border);' }, ['Status: ', el('span', { style: 'color:' + driftColor + ';' }, driftLabel)]));
+}
+
+function renderWarp() {
+  const sel = document.getElementById('warp-select');
+  sel.innerHTML = '';
+  for (let i = 1; i <= 9; i++) sel.appendChild(el('option', { value: i }, 'Warp ' + i));
+  sel.value = STATE.draftWarpFactor;
+  sel.onchange = (e) => { STATE.draftMode = 'warp'; STATE.draftWarpFactor = parseInt(e.target.value, 10); persist(); renderPending(); };
+}
+
+function renderImpulse() {
+  const wrap = document.getElementById('impulse-buttons'); wrap.innerHTML = '';
+  IMPULSE_OPTS.forEach((label) => {
+    const active = STATE.draftMode === 'impulse' && STATE.draftImpulseSetting === label;
+    wrap.appendChild(el('button', { class: 'btn' + (active ? '' : ''), style: active ? 'border:1px dashed var(--accent);background:var(--accent-wash);color:#eaf6f8;font-weight:700;' : '', onclick: () => { STATE.draftMode = 'impulse'; STATE.draftImpulseSetting = label; persist(); renderImpulse(); renderPending(); } }, label));
+  });
+}
+
+function renderThrusters() {
+  const input = document.getElementById('thruster-input');
+  input.value = STATE.draftThrusterSpeed;
+  input.style.opacity = (STATE.impulseSetting && !STATE.thrusterOverride) ? '0.4' : '1';
+  input.onchange = (e) => { STATE.draftThrusterSpeed = e.target.value; persist(); renderPending(); };
+  const overrideWrap = document.getElementById('override-wrap');
+  overrideWrap.style.display = STATE.impulseSetting ? 'block' : 'none';
+  const btn = document.getElementById('override-btn');
+  btn.textContent = STATE.thrusterOverride ? 'Override: ON' : 'Override';
+  btn.className = 'btn' + (STATE.thrusterOverride ? ' btn-accent' : '');
+  btn.onclick = () => { STATE.thrusterOverride = !STATE.thrusterOverride; persist(); renderThrusters(); renderPending(); };
+}
+
+function renderCourse() {
+  document.getElementById('course-input').value = STATE.draftCourse;
+  document.getElementById('course-input').onchange = (e) => { STATE.draftCourse = e.target.value; persist(); renderPending(); };
+  document.getElementById('course-locked').textContent = STATE.courseTarget ? ('Course locked: ' + STATE.courseTarget) : '';
+}
+
+function renderPending() {
+  const parts = [];
+  if (STATE.draftMode === 'warp') parts.push('Warp ' + STATE.draftWarpFactor + ' (Impulse \u2192 Full, Thrusters \u2192 Stopped)');
+  if (STATE.draftMode === 'impulse') parts.push(STATE.draftImpulseSetting + (STATE.thrusterOverride ? ' + Thruster Override' : ' (Thrusters \u2192 Stopped)'));
+  const tNum = parseInt(STATE.draftThrusterSpeed, 10) || 0;
+  if (!STATE.draftMode && tNum !== STATE.thrusterSpeed) parts.push('Thrusters ' + tNum + ' KPH');
+  if (STATE.draftMode === 'impulse' && STATE.thrusterOverride && tNum > 0) parts.push('Thrusters ' + tNum + ' KPH (override)');
+  if (STATE.draftCourse.trim() && STATE.draftCourse.trim() !== (STATE.courseTarget || '')) parts.push('Course to ' + STATE.draftCourse.trim());
+  document.getElementById('pending-summary').textContent = parts.length ? parts.join(' \u00b7 ') : 'No pending orders.';
+}
+
+document.getElementById('engage-btn').addEventListener('click', () => {
+  const mode = STATE.draftMode;
+  const override = STATE.thrusterOverride;
+  const tSpeed = Math.max(0, parseInt(STATE.draftThrusterSpeed, 10) || 0);
+  if (mode === 'warp') {
+    STATE.warpFactor = STATE.draftWarpFactor; STATE.impulseSetting = 'Full Impulse'; STATE.thrusterSpeed = 0; STATE.stationKeeping = false; STATE.thrusterOverride = false;
+  } else if (mode === 'impulse') {
+    STATE.impulseSetting = STATE.draftImpulseSetting; STATE.warpFactor = null; STATE.stationKeeping = false;
+    STATE.thrusterSpeed = override ? tSpeed : 0; STATE.thrusterOverride = false;
+  } else if (tSpeed !== STATE.thrusterSpeed) {
+    STATE.thrusterSpeed = tSpeed; if (tSpeed > 0) STATE.stationKeeping = false;
+  }
+  const cVal = STATE.draftCourse.trim();
+  if (cVal) STATE.courseTarget = cVal;
+  STATE.draftMode = null;
+  persist(); renderAll();
+});
+document.getElementById('all-stop-btn').addEventListener('click', () => {
+  STATE.warpFactor = null; STATE.impulseSetting = null; STATE.thrusterSpeed = 0; STATE.draftThrusterSpeed = '0'; STATE.stationKeeping = false; STATE.draftMode = null; STATE.thrusterOverride = false;
+  persist(); renderAll();
+});
+document.getElementById('station-keeping-btn').addEventListener('click', () => {
+  STATE.warpFactor = null; STATE.impulseSetting = null; STATE.thrusterSpeed = 0; STATE.draftThrusterSpeed = '0'; STATE.stationKeeping = !STATE.stationKeeping; STATE.draftMode = null; STATE.thrusterOverride = false;
+  persist(); renderAll();
+});
+
+function renderSensorObjects() {
+  const listWrap = document.getElementById('sensor-object-list'); listWrap.innerHTML = '';
+  const markers = document.getElementById('sensor-markers'); markers.innerHTML = '';
+  STATE.sensorObjects.forEach((o) => {
+    const def = OBJECT_TYPES[o.type];
+    const selected = STATE.selectedObjId === o.id;
+    listWrap.appendChild(el('div', { style: 'display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-radius:6px;border:1px solid ' + (selected ? 'var(--accent)' : '#1c2938') + ';background:#0f151a;cursor:pointer;', onclick: () => { STATE.selectedObjId = o.id; document.getElementById('scan-result').textContent = ''; persist(); renderAll(); } }, [el('div', { style: 'font-size:12px;color:' + def.color + ';' }, def.label + ': ' + o.label)]));
+    markers.appendChild(el('div', { style: 'position:absolute;left:' + o.left + '%;top:' + o.top + '%;transform:translate(-50%,-50%);width:10px;height:10px;border-radius:' + (o.type === 'celestial' ? '50%' : '2px') + ';background:' + def.color + ';border:2px solid #0b1015;pointer-events:none;' }));
+    markers.appendChild(el('div', { style: 'position:absolute;left:' + o.left + '%;top:calc(' + o.top + '% + 9px);transform:translate(-50%,0);font-size:8px;color:' + def.color + ';white-space:nowrap;pointer-events:none;' }, o.label));
+  });
+  const selectedObj = STATE.sensorObjects.find((o) => o.id === STATE.selectedObjId);
+  document.getElementById('object-actions').style.display = selectedObj ? 'block' : 'none';
+  if (selectedObj) {
+    document.getElementById('set-course-btn').onclick = () => { STATE.draftCourse = selectedObj.label; persist(); renderCourse(); renderPending(); };
+    document.getElementById('scan-btn').onclick = () => { document.getElementById('scan-result').textContent = 'Scanning ' + selectedObj.label + '... Classification: ' + OBJECT_TYPES[selectedObj.type].label + '.'; };
+  }
+}
+
+function renderWaypoints() {
+  const wrap = document.getElementById('waypoint-markers'); wrap.innerHTML = '';
+  STATE.waypoints.forEach((wp, i) => {
+    wrap.appendChild(el('div', { style: 'position:absolute;left:' + wp.left + '%;top:' + wp.top + '%;transform:translate(-50%,-50%);width:8px;height:8px;border:1px solid var(--accent);background:#0b1015;pointer-events:none;' }));
+    wrap.appendChild(el('div', { style: 'position:absolute;left:' + wp.left + '%;top:calc(' + wp.top + '% - 12px);transform:translate(-50%,0);font-size:8px;color:var(--accent);pointer-events:none;' }, String(i + 1)));
+  });
+  document.getElementById('waypoint-line').setAttribute('points', STATE.waypoints.map((wp) => wp.left + ',' + wp.top).join(' '));
+}
+document.getElementById('plot-mode-btn').addEventListener('click', () => {
+  STATE.plotMode = !STATE.plotMode; persist();
+  const btn = document.getElementById('plot-mode-btn');
+  btn.textContent = STATE.plotMode ? 'Plotting: ON' : 'Plot Course';
+  btn.className = 'btn btn-sm' + (STATE.plotMode ? ' btn-accent' : '');
+});
+document.getElementById('clear-waypoints-btn').addEventListener('click', () => { STATE.waypoints = []; persist(); renderWaypoints(); });
+document.getElementById('sensor-grid').addEventListener('click', (e) => {
+  if (!STATE.plotMode) return;
+  const rect = e.currentTarget.getBoundingClientRect();
+  const x = e.clientX - rect.left, y = e.clientY - rect.top;
+  STATE.waypoints.push({ left: Math.round(clamp((x / rect.width) * 100, 2, 98)), top: Math.round(clamp((y / rect.height) * 100, 2, 98)) });
+  persist(); renderWaypoints();
+});
+
+function renderAll() {
+  renderAlertButtons(); renderEngineStatus(); renderWarp(); renderImpulse(); renderThrusters(); renderCourse(); renderPending();
+  renderSensorObjects(); renderWaypoints();
+  const btn = document.getElementById('plot-mode-btn');
+  btn.textContent = STATE.plotMode ? 'Plotting: ON' : 'Plot Course';
+  btn.className = 'btn btn-sm' + (STATE.plotMode ? ' btn-accent' : '');
+  renderShipChat(document.getElementById('ship-chat'), () => STATE.shipChatLog, (text) => { STATE.shipChatLog.push({ from: 'You', text: text }); persist(); });
+}
+applyTheme(); renderAll();
+</script>
+</body>
+</html>

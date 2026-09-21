@@ -38,6 +38,8 @@
   <div class="row gap-8 wrap" id="tab-buttons" style="margin-bottom:16px;"></div>
 
   <div class="panel" id="tab-content" style="min-height: 420px;"></div>
+
+  <div class="chat-box" id="ship-chat"></div>
 </div>
 
 <script>
@@ -46,7 +48,12 @@ const STATE = loadState('character-sheet', {
   dob: '', height: '', weight: '', eyeColor: '', hairColor: '', hairStyle: '', facialHair: '', description: '',
   familyMembers: [], serviceRecords: [], medicalRecords: [],
   academyTerms: [{ id: 'term-academy', label: 'Starfleet Academy', years: [1,2,3,4].map(n => ({ id: 'year-'+n, label: 'Year '+n, classes: [], notes: [] })) }],
-  activeTab: 'physical'
+  activeTab: 'physical',
+  shipChatLog: [
+    { from: 'GD', text: 'Scene resumes as the crew regroups.' },
+    { from: 'Lt. Cmdr. Ferro', text: 'Engineering reports all systems nominal.' },
+    { from: 'Ens. Ohin', text: 'Logging this for the record.' }
+  ]
 });
 function persist() { saveState('character-sheet', STATE); }
 
@@ -331,6 +338,7 @@ function renderAll() {
   else if (STATE.activeTab === 'academy') renderAcademy(content);
   else if (STATE.activeTab === 'service') renderService(content);
   else if (STATE.activeTab === 'medical') renderMedical(content);
+  renderShipChat(document.getElementById('ship-chat'), () => STATE.shipChatLog, (text) => { STATE.shipChatLog.push({ from: 'You', text: text }); persist(); });
 }
 renderAll();
 </script>
